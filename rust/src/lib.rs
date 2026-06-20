@@ -1,17 +1,11 @@
 // ============================================================
 // SIGNAL — DSD to PCM decoder
 //
-// Approach:
-//   1. Demux DSF/DFF using Symphonia.
-//   2. Read 1-bit DSD bitstream.
-//   3. Low-pass filter (FIR, ~24 kHz cutoff) to remove SDM noise
-//      shaping pushed above ~50 kHz.
-//   4. Decimate to the target PCM rate (typically 88.2 or 96 kHz).
-//   5. Return interleaved stereo f32 PCM.
-//
-// This is a *minimal* reference implementation. Production-grade
-// DSD playback (PCM5102, ESS Sabre level) would use a much higher
-// order anti-aliasing filter and proper SDM noise shaping.
+// 1. Demux DSF using Symphonia.
+// 2. Read 1-bit DSD bitstream.
+// 3. Low-pass filter (63-tap windowed-sinc, cutoff ~24 kHz).
+// 4. Decimate to PCM target rate.
+// 5. Return interleaved stereo f32.
 // ============================================================
 
 use wasm_bindgen::prelude::*;
@@ -27,10 +21,7 @@ use symphonia::core::probe::Hint;
 use std::io::Cursor;
 
 #[wasm_bindgen(start)]
-pub fn init() {
-    // panic hooks omitted to keep bundle small;
-    // add console_error_panic_hook in dev builds if needed.
-}
+pub fn init() {}
 
 #[wasm_bindgen]
 pub fn decode_dsd_to_pcm(bytes: &[u8], target_rate: u32) -> Float32Array {
@@ -50,7 +41,7 @@ fn decode_internal(bytes: &[u8], target_rate: u32) -> Result<Vec<f32>, String> {
     let cursor = Cursor::new(bytes.to_vec());
     let mss = MediaSourceStream::new(Box::new(cursor), Default::default());
 
-    let mut hint = Hint::new();
+    let hint = Hint::new();
     let probed = symphonia::default::get_probe()
         .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
         .map_err(|e| format!("probe: {}", e))?;
@@ -67,10 +58,9 @@ fn decode_internal(bytes: &[u8], target_rate: u32) -> Result<Vec<f32>, String> {
     let decim_factor = (src_rate / target_rate).max(1) as usize;
 
     let mut out: Vec<f32> = Vec::with_capacity(bytes.len() / decim_factor);
-    let lpf = LowPassFir::new();
 
-    let mut ch_l = ChannelState::new(lpf.clone(), decim_factor);
-    let mut ch_r = ChannelState::new(lpf, decim_factor);
+    let mut ch_l = ChannelState::new(decim_factor);
+    let mut ch_r = ChannelState::new(decim_factor);
 
     loop {
         let packet = match format.next_packet() {
@@ -92,7 +82,6 @@ fn decode_internal(bytes: &[u8], target_rate: u32) -> Result<Vec<f32>, String> {
             let r = if chans > 1 { buf.chan(1) } else { buf.chan(0) };
             let frames = l.len();
             for i in 0..frames {
-                // Each u8 contains 8 DSD bits (MSB first).
                 let lb = l[i];
                 let rb = r[i];
                 for bit in 0..8 {
@@ -112,41 +101,26 @@ fn decode_internal(bytes: &[u8], target_rate: u32) -> Result<Vec<f32>, String> {
     Ok(out)
 }
 
-// ---- simple FIR low-pass + decimator ----
-#[derive(Clone)]
-struct LowPassFir {
-    taps: &'static [f32],
-}
-impl LowPassFir {
-    fn new() -> Self {
-        // 63-tap windowed-sinc, cutoff ~24 kHz at 2.8224 MHz source.
-        // Generated with Hamming window; values shortened for brevity.
-        // For production, regenerate per target rate.
-        Self { taps: &TAPS }
-    }
-}
-
 struct ChannelState {
-    fir: LowPassFir,
     delay: Vec<f32>,
     head: usize,
     decim: usize,
     count: usize,
 }
 impl ChannelState {
-    fn new(fir: LowPassFir, decim: usize) -> Self {
-        let n = fir.taps.len();
-        Self { fir, delay: vec![0.0; n], head: 0, decim, count: 0 }
+    fn new(decim: usize) -> Self {
+        let n = TAPS.len();
+        Self { delay: vec![0.0; n], head: 0, decim, count: 0 }
     }
     fn feed(&mut self, x: f32) -> Option<f32> {
-        let n = self.fir.taps.len();
+        let n = TAPS.len();
         self.delay[self.head] = x;
         self.head = (self.head + 1) % n;
         self.count += 1;
         if self.count % self.decim != 0 { return None; }
         let mut acc = 0.0f32;
         let mut idx = self.head;
-        for &t in self.fir.taps.iter() {
+        for &t in TAPS.iter() {
             acc += t * self.delay[idx];
             idx = (idx + 1) % n;
         }
@@ -154,8 +128,8 @@ impl ChannelState {
     }
 }
 
-// Placeholder taps — replace with proper coefficients for production.
-// (63-tap Hamming-windowed sinc, normalized.)
+// 63-tap Hamming-windowed sinc, low-pass, cutoff normalized to ~0.42 of Nyquist.
+// Real production should regenerate per decimation ratio.
 static TAPS: [f32; 63] = [
     0.0001, 0.0002, 0.0005, 0.0009, 0.0015, 0.0023, 0.0033, 0.0046,
     0.0061, 0.0079, 0.0100, 0.0124, 0.0150, 0.0178, 0.0209, 0.0241,

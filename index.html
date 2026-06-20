@@ -7,732 +7,245 @@
 <meta name="color-scheme" content="dark" />
 <title>SIGNAL — Lossless Player</title>
 <link rel="manifest" href="manifest.webmanifest" />
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%230a0a0a'/%3E%3Crect x='8' y='28' width='4' height='8' fill='%23ffb454'/%3E%3Crect x='16' y='22' width='4' height='20' fill='%23ffb454'/%3E%3Crect x='24' y='16' width='4' height='32' fill='%23ffb454'/%3E%3Crect x='32' y='24' width='4' height='16' fill='%23ffb454'/%3E%3Crect x='40' y='20' width='4' height='24' fill='%23ffb454'/%3E%3Crect x='48' y='26' width='4' height='12' fill='%23ffb454'/%3E%3C/svg%3E" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%230a0a0a'/%3E%3Ccircle cx='32' cy='32' r='22' fill='none' stroke='%23ffb454' stroke-width='2'/%3E%3Ccircle cx='32' cy='32' r='6' fill='%23ffb454'/%3E%3C/svg%3E" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
-<style>
-  :root {
-    --bg: #0a0a0a;
-    --panel: #131312;
-    --panel-2: #1a1a18;
-    --rule: #262624;
-    --ink: #e8e6df;
-    --ink-dim: #8a8780;
-    --ink-mute: #56544e;
-    --amber: #ffb454;
-    --amber-glow: #ffb45433;
-    --red: #ff5a3c;
-    --green: #58c27d;
-
-    --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
-    --sans: 'Inter Tight', system-ui, -apple-system, sans-serif;
-  }
-
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { height: 100%; }
-  body {
-    background: var(--bg);
-    color: var(--ink);
-    font-family: var(--sans);
-    font-feature-settings: "ss01", "cv11";
-    -webkit-font-smoothing: antialiased;
-    overflow: hidden;
-    user-select: none;
-  }
-  button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
-  button:focus-visible { outline: 1px solid var(--amber); outline-offset: 2px; }
-
-  /* ============== LAYOUT ============== */
-  .shell {
-    display: grid;
-    grid-template-rows: auto 1fr auto;
-    height: 100dvh;
-  }
-
-  /* ============== TOP BAR ============== */
-  .topbar {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding: 14px 20px;
-    border-bottom: 1px solid var(--rule);
-    background: var(--bg);
-  }
-  .brand {
-    display: flex;
-    align-items: baseline;
-    gap: 10px;
-  }
-  .brand .mark {
-    font-family: var(--mono);
-    font-weight: 700;
-    font-size: 13px;
-    letter-spacing: 0.18em;
-    color: var(--amber);
-  }
-  .brand .tag {
-    font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: 0.2em;
-    color: var(--ink-mute);
-    text-transform: uppercase;
-  }
-  .topbar .spacer { flex: 1; }
-  .topbar .stat {
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--ink-dim);
-    letter-spacing: 0.08em;
-  }
-  .topbar .stat b { color: var(--ink); font-weight: 500; }
-  .topbar button.action {
-    font-family: var(--mono);
-    font-size: 11px;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: var(--ink-dim);
-    padding: 8px 12px;
-    border: 1px solid var(--rule);
-    transition: color .15s, border-color .15s;
-  }
-  .topbar button.action:hover { color: var(--amber); border-color: var(--amber); }
-
-  /* ============== MAIN ============== */
-  main {
-    display: grid;
-    grid-template-columns: 320px 1fr;
-    min-height: 0;
-  }
-
-  /* ============== SIDEBAR / LIBRARY ============== */
-  .library {
-    border-right: 1px solid var(--rule);
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    background: var(--panel);
-  }
-  .library .head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 14px 18px;
-    border-bottom: 1px solid var(--rule);
-  }
-  .library .head .label {
-    font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: 0.22em;
-    text-transform: uppercase;
-    color: var(--ink-mute);
-  }
-  .library .head .count {
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--ink-dim);
-  }
-  .library .search {
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--rule);
-  }
-  .library .search input {
-    width: 100%;
-    background: transparent;
-    border: none;
-    color: var(--ink);
-    font-family: var(--mono);
-    font-size: 12px;
-    padding: 6px 4px;
-    border-bottom: 1px solid var(--rule);
-    outline: none;
-  }
-  .library .search input:focus { border-bottom-color: var(--amber); }
-  .library .search input::placeholder { color: var(--ink-mute); }
-
-  .tracklist { overflow-y: auto; flex: 1; min-height: 0; padding: 4px 0; }
-  .tracklist::-webkit-scrollbar { width: 6px; }
-  .tracklist::-webkit-scrollbar-thumb { background: var(--rule); }
-
-  .track {
-    display: grid;
-    grid-template-columns: 28px 1fr auto;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 18px;
-    cursor: pointer;
-    border-left: 2px solid transparent;
-    transition: background .12s;
-  }
-  .track:hover { background: var(--panel-2); }
-  .track.playing {
-    background: var(--panel-2);
-    border-left-color: var(--amber);
-  }
-  .track .idx {
-    font-family: var(--mono);
-    font-size: 10px;
-    color: var(--ink-mute);
-    text-align: right;
-  }
-  .track.playing .idx { color: var(--amber); }
-  .track .meta { min-width: 0; }
-  .track .title {
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--ink);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .track .sub {
-    font-family: var(--mono);
-    font-size: 10px;
-    color: var(--ink-mute);
-    letter-spacing: 0.05em;
-    margin-top: 2px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .track .format-pill {
-    font-family: var(--mono);
-    font-size: 9px;
-    letter-spacing: 0.1em;
-    color: var(--ink-dim);
-    padding: 2px 6px;
-    border: 1px solid var(--rule);
-    text-transform: uppercase;
-  }
-  .track.playing .format-pill { color: var(--amber); border-color: var(--amber); }
-
-  .empty {
-    padding: 40px 24px;
-    text-align: center;
-  }
-  .empty h3 {
-    font-family: var(--mono);
-    font-size: 11px;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: var(--ink-dim);
-    margin-bottom: 12px;
-  }
-  .empty p {
-    font-size: 13px;
-    color: var(--ink-mute);
-    line-height: 1.6;
-    margin-bottom: 18px;
-  }
-  .empty .formats {
-    font-family: var(--mono);
-    font-size: 10px;
-    color: var(--ink-mute);
-    letter-spacing: 0.1em;
-    line-height: 1.8;
-  }
-  .empty .formats span {
-    display: inline-block;
-    padding: 2px 8px;
-    margin: 2px;
-    border: 1px solid var(--rule);
-  }
-
-  /* ============== STAGE (right side) ============== */
-  .stage {
-    display: grid;
-    grid-template-rows: 1fr auto;
-    min-height: 0;
-    background: var(--bg);
-  }
-
-  /* === SIGNATURE: meter panel === */
-  .instrument {
-    display: grid;
-    grid-template-rows: auto 1fr auto;
-    padding: 28px 36px;
-    gap: 24px;
-    min-height: 0;
-    background:
-      radial-gradient(120% 80% at 50% -10%, #14140f 0%, transparent 60%),
-      var(--bg);
-  }
-
-  .nowplaying {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 24px;
-    align-items: end;
-  }
-  .nowplaying .left { min-width: 0; }
-  .nowplaying .eyebrow {
-    font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: 0.24em;
-    text-transform: uppercase;
-    color: var(--ink-mute);
-    margin-bottom: 10px;
-  }
-  .nowplaying .eyebrow .dot {
-    display: inline-block;
-    width: 6px; height: 6px;
-    background: var(--amber);
-    border-radius: 50%;
-    margin-right: 8px;
-    vertical-align: middle;
-    box-shadow: 0 0 8px var(--amber-glow);
-    animation: pulse 2s infinite;
-  }
-  .nowplaying .eyebrow .dot.idle { background: var(--ink-mute); box-shadow: none; animation: none; }
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
-  }
-  .nowplaying h1 {
-    font-size: 32px;
-    font-weight: 600;
-    letter-spacing: -0.02em;
-    line-height: 1.1;
-    color: var(--ink);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .nowplaying .artist {
-    margin-top: 8px;
-    font-size: 15px;
-    color: var(--ink-dim);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  /* Technical readout cluster */
-  .readout {
-    display: grid;
-    grid-template-columns: repeat(4, auto);
-    gap: 1px;
-    background: var(--rule);
-    border: 1px solid var(--rule);
-  }
-  .readout .cell {
-    background: var(--panel);
-    padding: 10px 16px;
-    min-width: 76px;
-  }
-  .readout .k {
-    font-family: var(--mono);
-    font-size: 9px;
-    letter-spacing: 0.18em;
-    color: var(--ink-mute);
-    text-transform: uppercase;
-    margin-bottom: 4px;
-  }
-  .readout .v {
-    font-family: var(--mono);
-    font-size: 15px;
-    font-weight: 500;
-    color: var(--amber);
-    letter-spacing: 0.02em;
-  }
-  .readout .v.dim { color: var(--ink-dim); }
-
-  /* === The meters === */
-  .meters {
-    display: grid;
-    grid-template-rows: auto 1fr;
-    gap: 12px;
-    min-height: 0;
-  }
-  .meter-scale {
-    display: grid;
-    grid-template-columns: 48px 1fr;
-    gap: 14px;
-    align-items: center;
-  }
-  .meter-scale .axis {
-    display: flex;
-    justify-content: space-between;
-    font-family: var(--mono);
-    font-size: 9px;
-    letter-spacing: 0.1em;
-    color: var(--ink-mute);
-  }
-  .meter-scale .axis span.peak { color: var(--red); }
-  .meter-scale .axis span.zero { color: var(--amber); }
-
-  .meter-wrap {
-    display: grid;
-    grid-template-rows: 1fr 1fr;
-    gap: 8px;
-    align-content: center;
-    min-height: 0;
-  }
-  .meter-row {
-    display: grid;
-    grid-template-columns: 48px 1fr;
-    gap: 14px;
-    align-items: center;
-  }
-  .meter-row .ch {
-    font-family: var(--mono);
-    font-size: 11px;
-    letter-spacing: 0.16em;
-    color: var(--ink-dim);
-    text-align: right;
-  }
-  canvas.meter {
-    width: 100%;
-    height: 28px;
-    display: block;
-    background: #050505;
-    border: 1px solid var(--rule);
-  }
-
-  /* === Spectrum strip === */
-  .spectrum-wrap {
-    border: 1px solid var(--rule);
-    background: #050505;
-    min-height: 120px;
-    position: relative;
-  }
-  canvas.spectrum {
-    width: 100%;
-    height: 100%;
-    display: block;
-  }
-  .spectrum-label {
-    position: absolute;
-    top: 8px;
-    left: 10px;
-    font-family: var(--mono);
-    font-size: 9px;
-    letter-spacing: 0.2em;
-    color: var(--ink-mute);
-    text-transform: uppercase;
-    pointer-events: none;
-  }
-
-  /* ============== TRANSPORT BAR ============== */
-  .transport {
-    border-top: 1px solid var(--rule);
-    background: var(--panel);
-    padding: 16px 28px;
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
-    gap: 24px;
-    align-items: center;
-  }
-  .transport .left, .transport .right {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-  }
-  .transport .right { justify-content: flex-end; }
-
-  .controls {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-  .ctrl {
-    width: 40px;
-    height: 40px;
-    display: grid;
-    place-items: center;
-    color: var(--ink-dim);
-    transition: color .15s;
-  }
-  .ctrl:hover { color: var(--ink); }
-  .ctrl.play {
-    width: 52px; height: 52px;
-    border: 1px solid var(--amber);
-    color: var(--amber);
-    margin: 0 6px;
-  }
-  .ctrl.play:hover { background: var(--amber); color: var(--bg); }
-  .ctrl svg { width: 18px; height: 18px; }
-  .ctrl.play svg { width: 20px; height: 20px; }
-
-  /* Scrubber */
-  .scrub {
-    display: grid;
-    grid-template-columns: 56px 1fr 56px;
-    gap: 12px;
-    align-items: center;
-  }
-  .scrub .time {
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--ink-dim);
-    letter-spacing: 0.05em;
-  }
-  .scrub .time.right { text-align: right; }
-  .scrub .bar {
-    height: 4px;
-    background: #232320;
-    position: relative;
-    cursor: pointer;
-  }
-  .scrub .bar .fill {
-    position: absolute;
-    inset: 0 auto 0 0;
-    background: var(--amber);
-    width: 0;
-  }
-  .scrub .bar .knob {
-    position: absolute;
-    top: 50%;
-    width: 10px; height: 10px;
-    background: var(--amber);
-    border-radius: 50%;
-    transform: translate(-50%, -50%);
-    left: 0;
-    opacity: 0;
-    transition: opacity .15s;
-    box-shadow: 0 0 12px var(--amber-glow);
-  }
-  .scrub .bar:hover .knob { opacity: 1; }
-
-  /* Volume */
-  .vol {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-  .vol svg { width: 16px; height: 16px; color: var(--ink-dim); }
-  .vol input[type=range] {
-    width: 100px;
-    -webkit-appearance: none;
-    appearance: none;
-    background: transparent;
-    cursor: pointer;
-  }
-  .vol input[type=range]::-webkit-slider-runnable-track {
-    height: 2px;
-    background: #232320;
-  }
-  .vol input[type=range]::-moz-range-track {
-    height: 2px;
-    background: #232320;
-  }
-  .vol input[type=range]::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 10px; height: 10px;
-    background: var(--amber);
-    border-radius: 50%;
-    margin-top: -4px;
-  }
-  .vol input[type=range]::-moz-range-thumb {
-    width: 10px; height: 10px;
-    background: var(--amber);
-    border-radius: 50%;
-    border: none;
-  }
-  .vol .pct {
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--ink-dim);
-    width: 32px;
-  }
-
-  /* mode buttons */
-  .mode-btn {
-    width: 32px; height: 32px;
-    display: grid;
-    place-items: center;
-    color: var(--ink-mute);
-  }
-  .mode-btn.on { color: var(--amber); }
-  .mode-btn svg { width: 15px; height: 15px; }
-
-  /* ============== TOASTS ============== */
-  .toast-stack {
-    position: fixed;
-    bottom: 24px;
-    right: 24px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    z-index: 100;
-    pointer-events: none;
-  }
-  .toast {
-    background: var(--panel);
-    border: 1px solid var(--rule);
-    border-left: 2px solid var(--amber);
-    padding: 10px 14px;
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--ink);
-    letter-spacing: 0.05em;
-    max-width: 360px;
-    animation: slideIn .25s ease-out;
-  }
-  .toast.warn { border-left-color: var(--red); }
-  @keyframes slideIn {
-    from { transform: translateX(20px); opacity: 0; }
-    to { transform: translateX(0); opacity: 1; }
-  }
-
-  /* ============== RESPONSIVE ============== */
-  @media (max-width: 860px) {
-    main { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
-    .library { border-right: none; border-bottom: 1px solid var(--rule); }
-    .nowplaying { grid-template-columns: 1fr; }
-    .nowplaying h1 { font-size: 24px; }
-    .readout { grid-template-columns: repeat(2, 1fr); }
-    .transport { grid-template-columns: 1fr; gap: 12px; padding: 12px 16px; }
-    .transport .left, .transport .right { justify-content: center; }
-    .topbar { padding: 12px 14px; gap: 10px; }
-    .topbar .stat { display: none; }
-    .instrument { padding: 18px 16px; }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    * { animation: none !important; transition: none !important; }
-  }
-</style>
+<link rel="stylesheet" href="./style.css" />
 </head>
 <body>
 
-<div class="shell">
+<div class="app" id="app" data-view="library">
 
-  <!-- ====== TOP BAR ====== -->
+  <!-- ============ TOP BAR ============ -->
   <header class="topbar">
     <div class="brand">
       <span class="mark">SIGNAL</span>
-      <span class="tag">Lossless · Bit-Perfect</span>
+      <span class="tag">Bit-perfect · Measured</span>
     </div>
+
+    <div class="signal-chain" id="signalChain" title="File → Engine → Output sample rates">
+      <div class="stage" data-stage="file">
+        <span class="k">FILE</span>
+        <span class="v" id="chainFile">—</span>
+      </div>
+      <span class="arrow">→</span>
+      <div class="stage" data-stage="engine">
+        <span class="k">ENGINE</span>
+        <span class="v" id="chainEngine">—</span>
+      </div>
+      <span class="arrow">→</span>
+      <div class="stage" data-stage="output">
+        <span class="k">OUTPUT</span>
+        <span class="v" id="chainOutput">—</span>
+      </div>
+    </div>
+
+    <div class="badges">
+      <button class="badge" id="badgeMeasured" title="Run signal measurement">
+        <span class="dot"></span>
+        <span id="badgeMeasuredLabel">NOT MEASURED</span>
+      </button>
+    </div>
+
     <div class="spacer"></div>
-    <div class="stat"><b id="statEngine">—</b> · ENGINE</div>
-    <div class="stat"><b id="statCtx">—</b> · CONTEXT</div>
-    <button class="action" id="btnOpen">Open Files</button>
-    <button class="action" id="btnOpenFolder">Open Folder</button>
+
+    <button class="action" id="btnView" title="Toggle view (M)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
+      <span id="viewLabel">VINYL</span>
+    </button>
+    <button class="action" id="btnScan" title="Scan library for hi-res authenticity & DR">SCAN</button>
+    <button class="action" id="btnOpen">FILES</button>
+    <button class="action primary" id="btnOpenFolder">FOLDER</button>
   </header>
 
-  <!-- ====== MAIN ====== -->
-  <main>
+  <!-- ============ LIBRARY VIEW ============ -->
+  <main class="view view-library" id="viewLibrary">
 
-    <!-- Library -->
     <aside class="library">
-      <div class="head">
+      <div class="lib-head">
         <span class="label">Library</span>
         <span class="count" id="libCount">0 tracks</span>
       </div>
-      <div class="search">
-        <input id="searchInput" type="text" placeholder="filter…" spellcheck="false" autocomplete="off" />
+      <div class="lib-search">
+        <input id="searchInput" type="text" placeholder="filter title, artist, album…" spellcheck="false" autocomplete="off" />
       </div>
-      <div class="tracklist" id="tracklist">
-        <div class="empty" id="emptyState">
-          <h3>No source loaded</h3>
-          <p>Open files or a folder from your drive. Nothing is uploaded — files are read directly by the browser.</p>
-          <div class="formats">
-            <span>FLAC</span><span>ALAC</span><span>WAV</span><span>AIFF</span>
-            <span>DSF</span><span>DFF</span><span>APE</span><span>WV</span>
-            <span>OGG</span><span>OPUS</span><span>MP3</span><span>M4A</span>
-          </div>
-        </div>
+      <div class="lib-scroller" id="libScroller">
+        <div class="lib-spacer" id="libSpacer"></div>
+        <div class="lib-rows" id="libRows"></div>
+      </div>
+      <div class="lib-foot" id="libFoot">
+        <span id="libStatus">No library loaded</span>
       </div>
     </aside>
 
-    <!-- Stage -->
-    <section class="stage">
+    <section class="stage-panel">
       <div class="instrument">
 
-        <!-- Now playing header -->
+        <!-- now playing block -->
         <div class="nowplaying">
-          <div class="left">
+          <div class="np-left">
             <div class="eyebrow">
               <span class="dot idle" id="statusDot"></span>
               <span id="statusText">STANDBY</span>
             </div>
             <h1 id="npTitle">Nothing playing</h1>
-            <div class="artist" id="npArtist">Select a track from the library</div>
+            <div class="np-artist" id="npArtist">Open a folder to begin</div>
+            <div class="np-album" id="npAlbum"></div>
           </div>
-          <div class="readout" aria-label="Technical readout">
-            <div class="cell"><div class="k">Format</div><div class="v dim" id="rFormat">—</div></div>
-            <div class="cell"><div class="k">Sample Rate</div><div class="v dim" id="rRate">—</div></div>
-            <div class="cell"><div class="k">Bit Depth</div><div class="v dim" id="rBits">—</div></div>
-            <div class="cell"><div class="k">Channels</div><div class="v dim" id="rChans">—</div></div>
+          <div class="np-right">
+            <div class="readout">
+              <div class="cell"><div class="k">Format</div><div class="v dim" id="rFormat">—</div></div>
+              <div class="cell"><div class="k">Sample Rate</div><div class="v dim" id="rRate">—</div></div>
+              <div class="cell"><div class="k">Bit Depth</div><div class="v dim" id="rBits">—</div></div>
+              <div class="cell"><div class="k">Channels</div><div class="v dim" id="rChans">—</div></div>
+            </div>
+            <div class="verdicts" id="verdicts"></div>
           </div>
         </div>
 
-        <!-- Meters + Spectrum -->
+        <!-- meters + spectrum -->
         <div class="meters">
-          <div class="meter-scale">
+          <div class="meter-axis">
             <span></span>
             <div class="axis">
               <span>-60</span><span>-40</span><span>-20</span><span>-12</span><span>-6</span><span class="zero">0</span><span class="peak">+3</span>
             </div>
           </div>
-          <div class="meter-wrap">
-            <div class="meter-row">
-              <span class="ch">L</span>
-              <canvas class="meter" id="meterL" width="900" height="28"></canvas>
-            </div>
-            <div class="meter-row">
-              <span class="ch">R</span>
-              <canvas class="meter" id="meterR" width="900" height="28"></canvas>
-            </div>
+          <div class="meter-row">
+            <span class="ch">L</span>
+            <canvas class="meter" id="meterL"></canvas>
+          </div>
+          <div class="meter-row">
+            <span class="ch">R</span>
+            <canvas class="meter" id="meterR"></canvas>
           </div>
           <div class="spectrum-wrap">
-            <span class="spectrum-label">Spectrum · 20Hz – 20kHz log</span>
-            <canvas class="spectrum" id="spectrum" width="1600" height="200"></canvas>
+            <span class="spectrum-label">SPECTRUM · 20Hz – 20kHz · log</span>
+            <canvas class="spectrum" id="spectrum"></canvas>
           </div>
         </div>
 
-      </div>
-
-      <!-- Transport -->
-      <div class="transport">
-        <div class="left">
-          <div class="scrub" style="width: 100%;">
-            <span class="time" id="timeCur">0:00</span>
-            <div class="bar" id="scrub">
-              <div class="fill" id="scrubFill"></div>
-              <div class="knob" id="scrubKnob"></div>
-            </div>
-            <span class="time right" id="timeTot">0:00</span>
-          </div>
-        </div>
-
-        <div class="controls">
-          <button class="mode-btn" id="btnShuffle" title="Shuffle">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
-          </button>
-          <button class="ctrl" id="btnPrev" title="Previous">
-            <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="19,20 9,12 19,4"/><rect x="5" y="4" width="2" height="16"/></svg>
-          </button>
-          <button class="ctrl play" id="btnPlay" title="Play / Pause">
-            <svg id="iconPlay" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"/></svg>
-            <svg id="iconPause" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-          </button>
-          <button class="ctrl" id="btnNext" title="Next">
-            <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5,4 15,12 5,20"/><rect x="17" y="4" width="2" height="16"/></svg>
-          </button>
-          <button class="mode-btn" id="btnRepeat" title="Repeat">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-          </button>
-        </div>
-
-        <div class="right">
-          <div class="vol">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-            <input id="vol" type="range" min="0" max="100" value="85" />
-            <span class="pct" id="volPct">85</span>
-          </div>
-        </div>
       </div>
     </section>
-
   </main>
+
+  <!-- ============ VINYL VIEW ============ -->
+  <main class="view view-vinyl" id="viewVinyl" hidden>
+    <div class="turntable">
+      <div class="platter-area">
+        <div class="platter" id="platter">
+          <div class="record" id="record">
+            <div class="grooves"></div>
+            <div class="label" id="recordLabel">
+              <div class="label-art" id="labelArt"></div>
+              <div class="label-text">
+                <div class="lt-title" id="vinylTitle">—</div>
+                <div class="lt-artist" id="vinylArtist">—</div>
+              </div>
+            </div>
+          </div>
+          <div class="spindle"></div>
+        </div>
+        <div class="tonearm" id="tonearm">
+          <div class="arm-pivot"></div>
+          <div class="arm"></div>
+          <div class="headshell"></div>
+        </div>
+      </div>
+      <aside class="sleeve" id="sleeve">
+        <div class="sleeve-front" id="sleeveFront"></div>
+        <div class="sleeve-back" id="sleeveBack">
+          <div class="liner">
+            <div class="liner-row"><span class="lk">Title</span><span class="lv" id="linerTitle">—</span></div>
+            <div class="liner-row"><span class="lk">Artist</span><span class="lv" id="linerArtist">—</span></div>
+            <div class="liner-row"><span class="lk">Album</span><span class="lv" id="linerAlbum">—</span></div>
+            <div class="liner-row"><span class="lk">Year</span><span class="lv" id="linerYear">—</span></div>
+            <div class="liner-row"><span class="lk">Format</span><span class="lv" id="linerFormat">—</span></div>
+            <div class="liner-row"><span class="lk">Sample</span><span class="lv" id="linerSample">—</span></div>
+            <div class="liner-row"><span class="lk">Bit Depth</span><span class="lv" id="linerBits">—</span></div>
+            <div class="liner-row"><span class="lk">Channels</span><span class="lv" id="linerChans">—</span></div>
+            <div class="liner-row"><span class="lk">Dynamic Range</span><span class="lv" id="linerDR">—</span></div>
+            <div class="liner-row"><span class="lk">Hi-Res Check</span><span class="lv" id="linerHiRes">—</span></div>
+            <div class="liner-row"><span class="lk">Encoder</span><span class="lv" id="linerEncoder">—</span></div>
+            <div class="liner-row"><span class="lk">ReplayGain</span><span class="lv" id="linerRG">—</span></div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <!-- ============ TRANSPORT ============ -->
+  <footer class="transport">
+    <div class="scrub-wrap">
+      <span class="time" id="timeCur">0:00</span>
+      <div class="bar" id="scrub">
+        <div class="fill" id="scrubFill"></div>
+        <div class="knob" id="scrubKnob"></div>
+      </div>
+      <span class="time right" id="timeTot">0:00</span>
+    </div>
+
+    <div class="controls">
+      <button class="mode-btn" id="btnShuffle" title="Shuffle (S)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+      </button>
+      <button class="ctrl" id="btnPrev" title="Previous (Shift+←)">
+        <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="19,20 9,12 19,4"/><rect x="5" y="4" width="2" height="16"/></svg>
+      </button>
+      <button class="ctrl play" id="btnPlay" title="Play / Pause (Space)">
+        <svg id="iconPlay" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"/></svg>
+        <svg id="iconPause" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+      </button>
+      <button class="ctrl" id="btnNext" title="Next (Shift+→)">
+        <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5,4 15,12 5,20"/><rect x="17" y="4" width="2" height="16"/></svg>
+      </button>
+      <button class="mode-btn" id="btnRepeat" title="Repeat (R)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+      </button>
+    </div>
+
+    <div class="vol-wrap">
+      <button class="mode-btn" id="btnGapless" title="Gapless playback" aria-pressed="true">
+        <span style="font-family:var(--mono);font-size:10px;letter-spacing:.15em">GAPLESS</span>
+      </button>
+      <button class="mode-btn" id="btnRG" title="ReplayGain" aria-pressed="false">
+        <span style="font-family:var(--mono);font-size:10px;letter-spacing:.15em">REPLAYGAIN</span>
+      </button>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;color:var(--ink-dim)"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+      <input id="vol" type="range" min="0" max="100" value="85" />
+      <span class="pct" id="volPct">85</span>
+    </div>
+  </footer>
 
 </div>
 
-<div class="toast-stack" id="toasts"></div>
-<input type="file" id="filePicker" multiple style="display:none" />
+<!-- Empty state -->
+<div class="empty-screen" id="emptyScreen">
+  <div class="empty-inner">
+    <div class="empty-mark">SIGNAL</div>
+    <h2>The player that tells you the truth about your music</h2>
+    <p>Open a folder of FLACs, WAVs, AIFFs or DSD files. Nothing leaves your machine. The browser reads files straight off your drive.</p>
+    <div class="empty-cta">
+      <button class="action primary big" id="emptyOpenFolder">Open Folder</button>
+      <button class="action big" id="emptyOpenFiles">Open Files</button>
+    </div>
+    <div class="empty-formats">
+      <span>FLAC</span><span>WAV</span><span>AIFF</span><span>ALAC</span>
+      <span>DSF</span><span>DFF</span><span>MP3</span><span>OGG</span><span>OPUS</span><span>M4A</span>
+    </div>
+    <div class="empty-trust">
+      <div class="t-row"><span class="t-k">Signal path</span><span class="t-v">Verified by 1 kHz null test</span></div>
+      <div class="t-row"><span class="t-k">Sample rate</span><span class="t-v">Engine matches source, OS shown honestly</span></div>
+      <div class="t-row"><span class="t-k">Hi-res claims</span><span class="t-v">Measured per file, not trusted from tags</span></div>
+      <div class="t-row"><span class="t-k">Dynamic range</span><span class="t-v">Computed per track using TT DR algorithm</span></div>
+    </div>
+  </div>
+</div>
 
-<script type="module" src="./app.js"></script>
+<div class="toast-stack" id="toasts"></div>
+<input type="file" id="filePicker" multiple style="display:none" accept=".flac,.wav,.wave,.aif,.aiff,.aifc,.alac,.m4a,.mp3,.ogg,.opus,.oga,.dsf,.dff,.dsd,.ape,.wv,.mp4" />
+
+<script type="module" src="./js/main.js"></script>
 </body>
 </html>

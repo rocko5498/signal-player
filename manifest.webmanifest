@@ -1,7 +1,7 @@
 {
   "name": "SIGNAL — Lossless Player",
   "short_name": "SIGNAL",
-  "description": "Bit-perfect, browser-based player for FLAC, DSD, and other lossless formats. No server, no upload.",
+  "description": "The lossless music player that tells you the truth about your music. FLAC, DSD, WAV, AIFF — 100% client-side.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -10,13 +10,13 @@
   "orientation": "any",
   "icons": [
     {
-      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' fill='%230a0a0a'/%3E%3Crect x='24' y='84' width='12' height='24' fill='%23ffb454'/%3E%3Crect x='48' y='66' width='12' height='60' fill='%23ffb454'/%3E%3Crect x='72' y='48' width='12' height='96' fill='%23ffb454'/%3E%3Crect x='96' y='72' width='12' height='48' fill='%23ffb454'/%3E%3Crect x='120' y='60' width='12' height='72' fill='%23ffb454'/%3E%3Crect x='144' y='78' width='12' height='36' fill='%23ffb454'/%3E%3C/svg%3E",
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' fill='%230a0a0a'/%3E%3Ccircle cx='96' cy='96' r='66' fill='none' stroke='%23ffb454' stroke-width='4'/%3E%3Ccircle cx='96' cy='96' r='18' fill='%23ffb454'/%3E%3C/svg%3E",
       "sizes": "192x192",
       "type": "image/svg+xml",
       "purpose": "any"
     },
     {
-      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' fill='%230a0a0a'/%3E%3Crect x='64' y='224' width='32' height='64' fill='%23ffb454'/%3E%3Crect x='128' y='176' width='32' height='160' fill='%23ffb454'/%3E%3Crect x='192' y='128' width='32' height='256' fill='%23ffb454'/%3E%3Crect x='256' y='192' width='32' height='128' fill='%23ffb454'/%3E%3Crect x='320' y='160' width='32' height='192' fill='%23ffb454'/%3E%3Crect x='384' y='208' width='32' height='96' fill='%23ffb454'/%3E%3C/svg%3E",
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' fill='%230a0a0a'/%3E%3Ccircle cx='256' cy='256' r='176' fill='none' stroke='%23ffb454' stroke-width='8'/%3E%3Ccircle cx='256' cy='256' r='48' fill='%23ffb454'/%3E%3C/svg%3E",
       "sizes": "512x512",
       "type": "image/svg+xml",
       "purpose": "any maskable"

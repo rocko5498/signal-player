@@ -1,23 +1,35 @@
 // SIGNAL service worker — caches the app shell so the player works offline.
 // User audio files are NEVER cached; they're read fresh from the local drive each time.
 
-const CACHE = 'signal-shell-v1';
+const CACHE = 'signal-shell-v2';
 const SHELL = [
   './',
   './index.html',
-  './app.js',
-  './metadata.js',
-  './wasm-bridge.js',
+  './style.css',
   './manifest.webmanifest',
+  './js/main.js',
+  './js/db.js',
+  './js/engine.js',
+  './js/metadata-core.js',
+  './js/metadata-worker.js',
+  './js/worker-pool.js',
+  './js/virtual-list.js',
+  './js/visualizers.js',
+  './js/analysis.js',
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(
+    caches.open(CACHE)
+      .then(c => c.addAll(SHELL).catch(() => {}))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(
-    caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -26,22 +38,21 @@ self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-
-  // Never intercept blob: or filesystem reads
   if (url.protocol === 'blob:' || url.protocol === 'file:') return;
 
-  // App shell — cache-first
-  if (SHELL.some(p => url.pathname.endsWith(p.replace('./','/')))) {
-    e.respondWith(caches.match(req).then(r => r || fetch(req)));
-    return;
-  }
+  // Same-origin only
+  if (url.origin !== self.location.origin) return;
 
-  // Everything else — network-first, fall back to cache
   e.respondWith(
-    fetch(req).then(r => {
-      const copy = r.clone();
-      caches.open(CACHE).then(c => c.put(req, copy)).catch(()=>{});
-      return r;
-    }).catch(() => caches.match(req))
+    caches.match(req).then(cached => {
+      if (cached) return cached;
+      return fetch(req).then(r => {
+        if (r.ok) {
+          const copy = r.clone();
+          caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
+        }
+        return r;
+      }).catch(() => caches.match('./index.html'));
+    })
   );
 });
