@@ -1,25 +1,45 @@
 // ============================================================
-// main.js — orchestration. Owns the state, wires up everything.
+// main.js — SIGNAL v5 orchestrator
+//
+// Views: tracks | albums | artists | queue | now
+// Plus: side panel for album detail
+// Plus: persistent queue
 // ============================================================
 
 import { SUPPORTED } from './metadata-core.js';
 import { metadataPool } from './worker-pool.js';
 import { cache, fileKey } from './db.js';
 import { AudioEngine } from './engine.js';
-import { Visualizers } from './visualizers.js';
 import { VirtualList } from './virtual-list.js';
 import { computeDR, analyzeHiRes, measureSignalPath } from './analysis.js';
 import { core } from './wasm-bridge.js';
 
-// ---------- DOM ----------
 const $ = (id) => document.getElementById(id);
 
+// ============ DOM refs ============
 const els = {
   app: $('app'),
   emptyScreen: $('emptyScreen'),
   filePicker: $('filePicker'),
   toasts: $('toasts'),
+  ctxMenu: $('ctxMenu'),
 
+  // sidebar / nav
+  navItems: document.querySelectorAll('.nav-item'),
+  navCountTracks: $('navCountTracks'),
+  navCountAlbums: $('navCountAlbums'),
+  navCountArtists: $('navCountArtists'),
+  navCountQueue: $('navCountQueue'),
+  btnOpen: $('btnOpen'),
+  btnOpenFolder: $('btnOpenFolder'),
+  btnScan: $('btnScan'),
+  emptyOpenFolder: $('emptyOpenFolder'),
+  emptyOpenFiles: $('emptyOpenFiles'),
+
+  // topbar
+  viewTitle: $('viewTitle'),
+  viewSub: $('viewSub'),
+  searchInput: $('searchInput'),
   signalChain: $('signalChain'),
   chainFile: $('chainFile'),
   chainEngine: $('chainEngine'),
@@ -27,42 +47,62 @@ const els = {
   badgeMeasured: $('badgeMeasured'),
   badgeMeasuredLabel: $('badgeMeasuredLabel'),
 
-  btnView: $('btnView'),
-  viewLabel: $('viewLabel'),
-  btnScan: $('btnScan'),
-  btnOpen: $('btnOpen'),
-  btnOpenFolder: $('btnOpenFolder'),
-  emptyOpenFolder: $('emptyOpenFolder'),
-  emptyOpenFiles: $('emptyOpenFiles'),
+  // views
+  viewTracks: $('viewTracks'),
+  viewAlbums: $('viewAlbums'),
+  viewArtists: $('viewArtists'),
+  viewQueue: $('viewQueue'),
+  viewNow: $('viewNow'),
 
-  viewLibrary: $('viewLibrary'),
-  viewVinyl: $('viewVinyl'),
-
-  libCount: $('libCount'),
-  libStatus: $('libStatus'),
-  ingestLed: $('ingestLed'),
-  searchInput: $('searchInput'),
+  // tracks
   libScroller: $('libScroller'),
   libSpacer: $('libSpacer'),
   libRows: $('libRows'),
 
-  npTitle: $('npTitle'),
-  npArtist: $('npArtist'),
-  npAlbum: $('npAlbum'),
-  rFormat: $('rFormat'),
-  rRate: $('rRate'),
-  rBits: $('rBits'),
-  rChans: $('rChans'),
-  verdicts: $('verdicts'),
+  // albums / artists
+  albumGrid: $('albumGrid'),
+  artistGrid: $('artistGrid'),
 
-  needleL: $('needleL'),
-  needleR: $('needleR'),
-  vuScaleL: $('vuScaleL'),
-  vuScaleR: $('vuScaleR'),
-  peakL: $('peakL'),
-  peakR: $('peakR'),
+  // queue
+  queueTitle: $('queueTitle'),
+  queueSub: $('queueSub'),
+  queueList: $('queueList'),
+  queueEmpty: $('queueEmpty'),
+  btnQueueShuffle: $('btnQueueShuffle'),
+  btnQueueClear: $('btnQueueClear'),
+
+  // now playing
+  nowArt: $('nowArt'),
+  nowArtGlow: $('nowArtGlow'),
+  nowEyebrow: $('nowEyebrow'),
+  nowTitle: $('nowTitle'),
+  nowArtist: $('nowArtist'),
+  nowAlbum: $('nowAlbum'),
+  nsFormat: $('nsFormat'),
+  nsRate: $('nsRate'),
+  nsBits: $('nsBits'),
+  nsChans: $('nsChans'),
+  nsDR: $('nsDR'),
+  nsHiRes: $('nsHiRes'),
+  nowVerdicts: $('nowVerdicts'),
   spectrum: $('spectrum'),
 
+  // side panel
+  sidePanel: $('sidePanel'),
+  sidePanelClose: $('sidePanelClose'),
+  spArt: $('spArt'),
+  spEyebrow: $('spEyebrow'),
+  spTitle: $('spTitle'),
+  spArtist: $('spArtist'),
+  spInfo: $('spInfo'),
+  spPlay: $('spPlay'),
+  spAddQueue: $('spAddQueue'),
+  spTracks: $('spTracks'),
+
+  // footer
+  npArt: $('npArt'),
+  npTitle: $('npTitle'),
+  npArtist: $('npArtist'),
   btnPlay: $('btnPlay'),
   iconPlay: $('iconPlay'),
   iconPause: $('iconPause'),
@@ -72,69 +112,80 @@ const els = {
   btnRepeat: $('btnRepeat'),
   btnGapless: $('btnGapless'),
   btnRG: $('btnRG'),
-  volKnob: $('volKnob'),
+  volSlider: $('volSlider'),
   volPct: $('volPct'),
-  scrub: $('scrub'),
+  scrubBar: $('scrubBar'),
   scrubFill: $('scrubFill'),
   scrubKnob: $('scrubKnob'),
   timeCur: $('timeCur'),
   timeTot: $('timeTot'),
-
-  platter: $('platter'),
-  record: $('record'),
-  recordLabel: $('recordLabel'),
-  labelArt: $('labelArt'),
-  vinylTitle: $('vinylTitle'),
-  vinylArtist: $('vinylArtist'),
-  tonearm: $('tonearm'),
-  sleeve: $('sleeve'),
-  sleeveFront: $('sleeveFront'),
-  linerTitle: $('linerTitle'),
-  linerArtist: $('linerArtist'),
-  linerAlbum: $('linerAlbum'),
-  linerYear: $('linerYear'),
-  linerFormat: $('linerFormat'),
-  linerSample: $('linerSample'),
-  linerBits: $('linerBits'),
-  linerChans: $('linerChans'),
-  linerDR: $('linerDR'),
-  linerHiRes: $('linerHiRes'),
-  linerEncoder: $('linerEncoder'),
-  linerRG: $('linerRG'),
 };
 
-// ---------- State ----------
+// ============ State ============
 const state = {
-  tracks: [],         // { id, file, name, ext, meta?, art? (objectURL), drValue?, hiRes? }
-  filtered: [],       // sorted indices
-  view: 'library',    // 'library' | 'vinyl'
+  tracks: [],
+  filtered: [],           // indices into state.tracks (for tracks view + search)
+  albums: [],             // [{key, title, artist, year, art, trackIndices, dr}]
+  artists: [],            // [{name, art, albumKeys, trackIndices}]
+  queue: [],              // array of track ids
+  view: 'tracks',
   currentIdx: -1,
+  currentSpAlbumKey: null,
   shuffle: false,
   repeat: 'off',
   shuffleBag: [],
-  measured: null,     // { thdnDb, clean, timestamp } | null
-  ingestActive: false,
-  ingestBatchTimer: null,
-  artUrls: new Set(), // for cleanup
+  measured: null,
   gapless: true,
   useReplayGain: false,
+  artUrls: new Set(),
 };
 
 const engine = new AudioEngine();
-let visualizers = null;
 let virtualList = null;
+let spectrumAnim = null;
 
-// ---------- Toast ----------
+// ============ Toast ============
 function toast(msg, kind = '') {
   const t = document.createElement('div');
   t.className = 'toast' + (kind ? ' ' + kind : '');
   t.textContent = msg;
   els.toasts.appendChild(t);
-  setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; }, 3500);
-  setTimeout(() => t.remove(), 3900);
+  setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .25s'; }, 3500);
+  setTimeout(() => t.remove(), 3800);
 }
 
-// ---------- File ingestion ----------
+// ============ View routing ============
+els.navItems.forEach(btn => {
+  btn.addEventListener('click', () => setView(btn.dataset.view));
+});
+function setView(view) {
+  state.view = view;
+  els.app.dataset.view = view;
+  els.navItems.forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  els.viewTracks.hidden = view !== 'tracks';
+  els.viewAlbums.hidden = view !== 'albums';
+  els.viewArtists.hidden = view !== 'artists';
+  els.viewQueue.hidden = view !== 'queue';
+  els.viewNow.hidden = view !== 'now';
+
+  const titles = {
+    tracks: ['Tracks', 'All tracks in your library'],
+    albums: ['Albums', `${state.albums.length} albums`],
+    artists: ['Artists', `${state.artists.length} artists`],
+    queue: ['Queue', state.queue.length ? `${state.queue.length} tracks queued` : 'Empty'],
+    now: ['Now Playing', state.currentIdx >= 0 ? state.tracks[state.currentIdx]?.meta?.title || '' : 'Nothing playing'],
+  };
+  const [t, s] = titles[view] || ['', ''];
+  els.viewTitle.textContent = t;
+  els.viewSub.textContent = s;
+
+  if (view === 'albums') renderAlbums();
+  else if (view === 'artists') renderArtists();
+  else if (view === 'queue') renderQueue();
+  else if (view === 'now') updateNowView();
+}
+
+// ============ File ingest ============
 els.btnOpen.addEventListener('click', () => els.filePicker.click());
 els.emptyOpenFiles.addEventListener('click', () => els.filePicker.click());
 els.filePicker.addEventListener('change', (e) => onFilesChosen(e.target.files));
@@ -161,46 +212,33 @@ async function openFolder() {
 els.btnOpenFolder.addEventListener('click', openFolder);
 els.emptyOpenFolder.addEventListener('click', openFolder);
 
-async function* walkDir(dirHandle, path = '') {
-  for await (const [name, handle] of dirHandle.entries()) {
-    if (handle.kind === 'file') {
-      const file = await handle.getFile();
-      yield file;
-    } else if (handle.kind === 'directory') {
-      yield* walkDir(handle, path + name + '/');
-    }
+async function* walkDir(dirHandle) {
+  for await (const [, handle] of dirHandle.entries()) {
+    if (handle.kind === 'file') yield await handle.getFile();
+    else if (handle.kind === 'directory') yield* walkDir(handle);
   }
 }
 
 async function onFilesChosen(fileList) {
   const incoming = [...fileList].filter(f => SUPPORTED.includes(f.name.split('.').pop().toLowerCase()));
-  if (!incoming.length) {
-    toast('No supported audio files in selection', 'warn');
-    return;
-  }
+  if (!incoming.length) { toast('No supported audio files', 'warn'); return; }
   els.emptyScreen.hidden = true;
-  state.ingestActive = true;
-  els.libStatus.textContent = `Reading ${incoming.length} files…`;
 
   const before = state.tracks.length;
   for (const file of incoming) {
-    const ext = file.name.split('.').pop().toLowerCase();
     state.tracks.push({
       id: cryptoId(),
       file,
       name: file.name,
-      ext,
-      meta: null,
-      art: null,
-      drValue: null,
-      hiRes: null,
+      ext: file.name.split('.').pop().toLowerCase(),
+      meta: null, art: null, drValue: null, hiRes: null,
     });
   }
   applyFilter();
-  // One render now to show track names immediately; no more during ingest.
   scheduleRender();
+  updateCounts();
 
-  // --- Step 1: bulk cache lookup, one transaction for ALL keys ---
+  // Bulk cache lookup
   const keys = incoming.map(f => fileKey(f));
   const cached = await cache.getMetaBatch(keys);
   let cachedHits = 0;
@@ -211,12 +249,7 @@ async function onFilesChosen(fileList) {
       cachedHits++;
     }
   }
-  if (cachedHits) {
-    els.libStatus.textContent = `${cachedHits} from cache, parsing ${incoming.length - cachedHits}…`;
-  }
 
-  // --- Step 2: parse uncached files; throttle to keep workers fed but not overloaded ---
-  // Skip art extraction entirely — too expensive in bulk. Art loads lazily.
   let done = cachedHits;
   const total = incoming.length;
   const CONCURRENCY = 6;
@@ -231,7 +264,7 @@ async function onFilesChosen(fileList) {
 
   const queue = [];
   for (let i = 0; i < incoming.length; i++) {
-    if (state.tracks[before + i].meta) continue; // cached already
+    if (state.tracks[before + i].meta) continue;
     queue.push(i);
   }
 
@@ -242,20 +275,14 @@ async function onFilesChosen(fileList) {
       const file = incoming[i];
       const t = state.tracks[before + i];
       try {
-        const result = await metadataPool.parse(file, false); // no art
+        const result = await metadataPool.parse(file, false);
         t.meta = result.meta;
         pendingWrites.push([keys[i], result.meta]);
-      } catch (e) {
+      } catch {
         t.meta = { format: file.name.split('.').pop().toUpperCase() };
       }
       done++;
-      if (pendingWrites.length >= BATCH_FLUSH) {
-        // Fire and forget; don't block the worker
-        flushWrites();
-      }
-      if (done % 50 === 0 || done === total) {
-        els.libStatus.textContent = `Indexed ${done} of ${total}`;
-      }
+      if (pendingWrites.length >= BATCH_FLUSH) flushWrites();
     }
   };
   const workers = [];
@@ -263,35 +290,68 @@ async function onFilesChosen(fileList) {
   await Promise.all(workers);
   await flushWrites();
 
-  state.ingestActive = false;
-  els.libStatus.textContent = `${state.tracks.length} tracks loaded`;
+  rebuildAggregations();
   applyFilter();
   scheduleRender();
+  updateCounts();
+  toast(`Added ${incoming.length} track${incoming.length>1?'s':''}`, 'ok');
 }
 
-// ---------- Library rendering ----------
+// ============ Aggregations (albums + artists) ============
+function rebuildAggregations() {
+  const albumMap = new Map();
+  for (let i = 0; i < state.tracks.length; i++) {
+    const t = state.tracks[i];
+    const m = t.meta || {};
+    const album = m.album || 'Unknown Album';
+    const artist = m.albumArtist || m.artist || 'Unknown Artist';
+    const key = `${album}|${artist}`;
+    let a = albumMap.get(key);
+    if (!a) {
+      a = { key, title: album, artist, year: m.year || m.originalYear || '', trackIndices: [], art: null };
+      albumMap.set(key, a);
+    }
+    a.trackIndices.push(i);
+    if (!a.art && t.art) a.art = t.art;
+  }
+  state.albums = [...albumMap.values()].sort((a, b) => {
+    if (a.artist !== b.artist) return a.artist.localeCompare(b.artist);
+    return a.title.localeCompare(b.title);
+  });
+
+  const artistMap = new Map();
+  for (const a of state.albums) {
+    let ar = artistMap.get(a.artist);
+    if (!ar) {
+      ar = { name: a.artist, albumKeys: [], trackIndices: [], art: null };
+      artistMap.set(a.artist, ar);
+    }
+    ar.albumKeys.push(a.key);
+    ar.trackIndices.push(...a.trackIndices);
+    if (!ar.art && a.art) ar.art = a.art;
+  }
+  state.artists = [...artistMap.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function updateCounts() {
+  els.navCountTracks.textContent = state.tracks.length;
+  els.navCountAlbums.textContent = state.albums.length;
+  els.navCountArtists.textContent = state.artists.length;
+  els.navCountQueue.textContent = state.queue.length;
+}
+
+// ============ Tracks (virtualized) ============
 function applyFilter() {
   const q = els.searchInput.value.trim().toLowerCase();
-  if (!q) {
-    state.filtered = state.tracks.map((_, i) => i);
-  } else {
-    state.filtered = state.tracks
-      .map((t, i) => ({ t, i }))
-      .filter(({ t }) => {
-        const m = t.meta || {};
-        return (
-          (m.title && m.title.toLowerCase().includes(q)) ||
-          (m.artist && m.artist.toLowerCase().includes(q)) ||
-          (m.album && m.album.toLowerCase().includes(q)) ||
-          t.name.toLowerCase().includes(q)
-        );
-      })
-      .map(({ i }) => i);
-  }
-  if (state.filtered.length === state.tracks.length) {
-    els.libCount.textContent = `${state.tracks.length} track${state.tracks.length===1?'':'s'}`;
-  } else {
-    els.libCount.textContent = `${state.filtered.length} of ${state.tracks.length}`;
+  if (!q) state.filtered = state.tracks.map((_, i) => i);
+  else {
+    state.filtered = [];
+    for (let i = 0; i < state.tracks.length; i++) {
+      const t = state.tracks[i];
+      const m = t.meta || {};
+      const hay = `${m.title||''} ${m.artist||''} ${m.album||''} ${t.name}`.toLowerCase();
+      if (hay.includes(q)) state.filtered.push(i);
+    }
   }
 }
 
@@ -301,9 +361,7 @@ function scheduleRender() {
   renderScheduled = true;
   requestAnimationFrame(() => {
     renderScheduled = false;
-    if (virtualList) {
-      virtualList.setItems(state.filtered);
-    }
+    if (virtualList) virtualList.setItems(state.filtered);
   });
 }
 
@@ -315,67 +373,68 @@ function renderTrackRow(el, trackIdx, listPos) {
   const artist = m.artist || '';
   const album = m.album || '';
   const fmt = (m.format || t.ext).toUpperCase();
-  const sr = m.sampleRate ? formatSR(m.sampleRate) : '';
-  const bd = m.bitDepth ? `${m.bitDepth}-bit` : (m.isDsd ? `DSD${m.dsdRate||''}` : '');
+  const sr = m.sampleRate ? formatSRShort(m.sampleRate) : '';
+  const dur = m.duration ? formatTime(m.duration) : '';
 
   el.classList.toggle('playing', trackIdx === state.currentIdx);
 
-  // Cache children on first build so we never querySelector again
   if (!el._refs) {
     el.innerHTML = `
-      <span class="idx"></span>
-      <div class="art"></div>
-      <div class="meta">
-        <div class="title"></div>
-        <div class="sub"></div>
-      </div>
-      <div class="badges-mini"></div>
+      <span class="t-num"></span>
+      <div class="t-art"></div>
+      <div class="t-title"></div>
+      <div class="t-artist"></div>
+      <div class="t-album"></div>
+      <div class="t-fmt"></div>
+      <div class="t-sr"></div>
+      <div class="t-dr"></div>
+      <div class="t-dur"></div>
     `;
     el._refs = {
-      idx: el.querySelector('.idx'),
-      art: el.querySelector('.art'),
-      title: el.querySelector('.title'),
-      sub: el.querySelector('.sub'),
-      badges: el.querySelector('.badges-mini'),
+      num: el.querySelector('.t-num'),
+      art: el.querySelector('.t-art'),
+      title: el.querySelector('.t-title'),
+      artist: el.querySelector('.t-artist'),
+      album: el.querySelector('.t-album'),
+      fmt: el.querySelector('.t-fmt'),
+      sr: el.querySelector('.t-sr'),
+      dr: el.querySelector('.t-dr'),
+      dur: el.querySelector('.t-dur'),
     };
     el.addEventListener('click', () => {
-      const i = parseInt(el.dataset.idx);
-      const realIdx = state.filtered[i];
+      const idx = parseInt(el.dataset.idx);
+      const realIdx = state.filtered[idx];
       if (realIdx === state.currentIdx) togglePlay();
       else playIndex(realIdx);
     });
+    el.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const idx = parseInt(el.dataset.idx);
+      const realIdx = state.filtered[idx];
+      openContextMenu(e.clientX, e.clientY, realIdx);
+    });
   }
   const r = el._refs;
-  r.idx.textContent = String(listPos + 1).padStart(3, '0');
+  r.num.textContent = String(listPos + 1).padStart(3, '0');
   r.art.style.backgroundImage = t.art ? `url(${t.art})` : '';
-  // Kick off lazy art load if we don't have one yet (and haven't tried)
-  if (!t.art && !t._artTried && m.hasArt) {
-    queueArtLoad(t);
-  }
+  if (!t.art && !t._artTried && m.hasArt) queueArtLoad(t);
   r.title.textContent = title;
-  let sub = '';
-  if (artist || album) {
-    sub = [artist, album].filter(Boolean).join(' · ');
-  } else if (m.format) {
-    sub = m.format;
-  }
-  r.sub.textContent = sub;
-
-  let html = `<span class="pill">${fmt}</span>`;
-  if (sr || bd) html += `<span class="pill">${[sr,bd].filter(Boolean).join(' · ')}</span>`;
-  if (t.hiRes) {
-    if (t.hiRes.verdict === 'fake') html += `<span class="pill fake">UPSAMPLED</span>`;
-    else if (t.hiRes.verdict === 'true') html += `<span class="pill hires">HI-RES</span>`;
-  }
+  r.artist.textContent = artist;
+  r.album.textContent = album;
+  r.fmt.textContent = fmt;
+  r.fmt.className = 't-fmt' + (t.hiRes?.verdict === 'true' ? ' hires' : t.hiRes?.verdict === 'fake' ? ' fake' : '');
+  r.sr.textContent = sr;
   if (t.drValue != null) {
-    const cls = t.drValue >= 14 ? 'drhi' : t.drValue >= 8 ? 'drmid' : 'drlow';
-    html += `<span class="pill ${cls}">DR${t.drValue}</span>`;
+    r.dr.textContent = `DR${t.drValue}`;
+    r.dr.className = 't-dr ' + (t.drValue >= 14 ? 'drhi' : t.drValue >= 8 ? 'drmid' : 'drlow');
+  } else {
+    r.dr.textContent = '';
+    r.dr.className = 't-dr';
   }
-  r.badges.innerHTML = html;
+  r.dur.textContent = dur;
 }
 
-// ---------- Lazy art queue ----------
-// Only loads art for tracks the user actually sees / plays.
+// ============ Lazy art ============
 const artQueue = [];
 let artWorkerRunning = false;
 function queueArtLoad(t) {
@@ -391,101 +450,284 @@ async function runArtWorker() {
     if (t.art || t._artTried) continue;
     t._artTried = true;
     try {
-      // Cache hit first
       const cachedArt = await cache.getArt(t.file);
       if (cachedArt) {
         const url = URL.createObjectURL(cachedArt);
         t.art = url;
         state.artUrls.add(url);
         scheduleRender();
+        propagateArtToAggregations(t);
         continue;
       }
-      // Otherwise extract via worker (with art this time)
       const result = await metadataPool.parse(t.file, true);
       if (result.artBlob) {
         const url = URL.createObjectURL(result.artBlob);
         t.art = url;
         state.artUrls.add(url);
-        cache.setArt(t.file, result.artBlob); // fire-and-forget
+        cache.setArt(t.file, result.artBlob);
         scheduleRender();
+        propagateArtToAggregations(t);
       }
     } catch {}
   }
   artWorkerRunning = false;
 }
 
-let searchDebounceId = null;
-els.searchInput.addEventListener('input', () => {
-  if (searchDebounceId) clearTimeout(searchDebounceId);
-  searchDebounceId = setTimeout(() => {
-    applyFilter();
-    scheduleRender();
-  }, 120);
-});
-
-function stripExt(name) { return name.replace(/\.[^.]+$/, ''); }
-function formatSR(hz) {
-  if (hz >= 1000) return (hz/1000).toFixed(hz % 1000 === 0 ? 0 : 1) + ' kHz';
-  return hz + ' Hz';
+function propagateArtToAggregations(t) {
+  const m = t.meta || {};
+  const albumKey = `${m.album||'Unknown Album'}|${m.albumArtist||m.artist||'Unknown Artist'}`;
+  const album = state.albums.find(a => a.key === albumKey);
+  if (album && !album.art) {
+    album.art = t.art;
+    const tile = els.albumGrid.querySelector(`[data-key="${CSS.escape(albumKey)}"] .album-cover`);
+    if (tile) tile.style.backgroundImage = `url(${t.art})`;
+  }
+  const artistName = m.albumArtist || m.artist || 'Unknown Artist';
+  const artist = state.artists.find(a => a.name === artistName);
+  if (artist && !artist.art) {
+    artist.art = t.art;
+    const tile = els.artistGrid.querySelector(`[data-name="${CSS.escape(artistName)}"] .artist-circle`);
+    if (tile) tile.style.backgroundImage = `url(${t.art})`;
+  }
 }
 
-// ---------- Playback ----------
+// ============ Albums view ============
+function renderAlbums() {
+  els.albumGrid.innerHTML = '';
+  if (!state.albums.length) {
+    els.albumGrid.innerHTML = '<div style="color:var(--ink-mute);padding:40px;">No albums yet — open a folder.</div>';
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  for (const album of state.albums) {
+    const tile = document.createElement('div');
+    tile.className = 'album-tile';
+    tile.dataset.key = album.key;
+    tile.innerHTML = `
+      <div class="album-cover" style="${album.art ? `background-image:url(${album.art})` : ''}">
+        <div class="album-play">
+          <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="7,4 20,12 7,20"/></svg>
+        </div>
+      </div>
+      <div class="album-title"></div>
+      <div class="album-artist"></div>
+    `;
+    tile.querySelector('.album-title').textContent = album.title;
+    tile.querySelector('.album-artist').textContent = album.artist;
+    tile.addEventListener('click', (e) => {
+      if (e.target.closest('.album-play')) {
+        playAlbum(album);
+      } else {
+        openAlbumPanel(album);
+      }
+    });
+    // Lazy-load art for first track if not yet loaded
+    if (!album.art && album.trackIndices.length) {
+      const firstTrack = state.tracks[album.trackIndices[0]];
+      if (firstTrack && !firstTrack._artTried) queueArtLoad(firstTrack);
+    }
+    frag.appendChild(tile);
+  }
+  els.albumGrid.appendChild(frag);
+}
+
+function openAlbumPanel(album) {
+  state.currentSpAlbumKey = album.key;
+  els.sidePanel.hidden = false;
+  els.spArt.style.backgroundImage = album.art ? `url(${album.art})` : '';
+  els.spTitle.textContent = album.title;
+  els.spArtist.textContent = album.artist;
+  const totalDur = album.trackIndices.reduce((s, i) => s + (state.tracks[i]?.meta?.duration || 0), 0);
+  els.spInfo.textContent = `${album.trackIndices.length} tracks · ${formatTime(totalDur)}${album.year ? ` · ${album.year}` : ''}`;
+  els.spTracks.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  for (let n = 0; n < album.trackIndices.length; n++) {
+    const trackIdx = album.trackIndices[n];
+    const t = state.tracks[trackIdx];
+    if (!t) continue;
+    const m = t.meta || {};
+    const row = document.createElement('div');
+    row.className = 'sp-track' + (trackIdx === state.currentIdx ? ' playing' : '');
+    row.innerHTML = `
+      <span class="sp-track-num">${m.trackNo || (n+1)}</span>
+      <span class="sp-track-title"></span>
+      <span class="sp-track-fmt">${(m.format||t.ext).toUpperCase()}</span>
+      <span class="sp-track-dur">${m.duration ? formatTime(m.duration) : ''}</span>
+    `;
+    row.querySelector('.sp-track-title').textContent = m.title || stripExt(t.name);
+    row.addEventListener('click', () => playIndex(trackIdx));
+    frag.appendChild(row);
+  }
+  els.spTracks.appendChild(frag);
+  els.spPlay.onclick = () => playAlbum(album);
+  els.spAddQueue.onclick = () => { addToQueue(album.trackIndices); toast(`Added ${album.trackIndices.length} tracks to queue`, 'ok'); };
+}
+els.sidePanelClose.addEventListener('click', () => { els.sidePanel.hidden = true; state.currentSpAlbumKey = null; });
+
+function playAlbum(album) {
+  if (!album.trackIndices.length) return;
+  playIndex(album.trackIndices[0]);
+  // queue the rest
+  state.queue = album.trackIndices.slice(1).map(i => state.tracks[i].id);
+  saveQueue();
+  updateCounts();
+}
+
+// ============ Artists view ============
+function renderArtists() {
+  els.artistGrid.innerHTML = '';
+  if (!state.artists.length) {
+    els.artistGrid.innerHTML = '<div style="color:var(--ink-mute);padding:40px;">No artists yet.</div>';
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  for (const artist of state.artists) {
+    const tile = document.createElement('div');
+    tile.className = 'artist-tile';
+    tile.dataset.name = artist.name;
+    tile.innerHTML = `
+      <div class="artist-circle" style="${artist.art ? `background-image:url(${artist.art})` : ''}"></div>
+      <div class="artist-name"></div>
+      <div class="artist-sub">${artist.albumKeys.length} album${artist.albumKeys.length===1?'':'s'}</div>
+    `;
+    tile.querySelector('.artist-name').textContent = artist.name;
+    tile.addEventListener('click', () => filterToArtist(artist));
+    frag.appendChild(tile);
+  }
+  els.artistGrid.appendChild(frag);
+}
+function filterToArtist(artist) {
+  els.searchInput.value = artist.name;
+  applyFilter();
+  scheduleRender();
+  setView('tracks');
+}
+
+// ============ Queue ============
+async function loadQueue() {
+  try {
+    const q = await cache.getMeta({ name: '__queue__', size: 0, lastModified: 0 });
+    if (Array.isArray(q)) state.queue = q;
+  } catch {}
+}
+async function saveQueue() {
+  try {
+    await cache.setMeta({ name: '__queue__', size: 0, lastModified: 0 }, state.queue);
+  } catch {}
+}
+function addToQueue(trackIndicesOrIds) {
+  const items = Array.isArray(trackIndicesOrIds) ? trackIndicesOrIds : [trackIndicesOrIds];
+  for (const it of items) {
+    const id = typeof it === 'number' ? state.tracks[it]?.id : it;
+    if (id) state.queue.push(id);
+  }
+  saveQueue();
+  updateCounts();
+}
+
+function renderQueue() {
+  if (!state.queue.length) {
+    els.queueList.style.display = 'none';
+    els.queueEmpty.hidden = false;
+    els.queueSub.textContent = 'No tracks queued';
+    return;
+  }
+  els.queueList.style.display = '';
+  els.queueEmpty.hidden = true;
+  els.queueSub.textContent = `${state.queue.length} track${state.queue.length===1?'':'s'} queued`;
+  els.queueList.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  const idMap = new Map(state.tracks.map((t, i) => [t.id, i]));
+  for (let n = 0; n < state.queue.length; n++) {
+    const trackIdx = idMap.get(state.queue[n]);
+    if (trackIdx == null) continue;
+    const t = state.tracks[trackIdx];
+    const m = t.meta || {};
+    const row = document.createElement('div');
+    row.className = 'sp-track';
+    row.innerHTML = `
+      <span class="sp-track-num">${n+1}</span>
+      <span class="sp-track-title"></span>
+      <span class="sp-track-fmt">${(m.format||t.ext).toUpperCase()}</span>
+      <span class="sp-track-dur">${m.duration ? formatTime(m.duration) : ''}</span>
+    `;
+    row.querySelector('.sp-track-title').textContent = (m.title || stripExt(t.name)) + (m.artist ? ` — ${m.artist}` : '');
+    row.addEventListener('click', () => playIndex(trackIdx));
+    frag.appendChild(row);
+  }
+  els.queueList.appendChild(frag);
+}
+els.btnQueueClear.addEventListener('click', () => { state.queue = []; saveQueue(); renderQueue(); updateCounts(); });
+els.btnQueueShuffle.addEventListener('click', () => {
+  for (let i = state.queue.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i+1));
+    [state.queue[i], state.queue[j]] = [state.queue[j], state.queue[i]];
+  }
+  saveQueue();
+  renderQueue();
+});
+
+// ============ Context menu ============
+let ctxTrackIdx = -1;
+function openContextMenu(x, y, trackIdx) {
+  ctxTrackIdx = trackIdx;
+  els.ctxMenu.hidden = false;
+  els.ctxMenu.style.left = x + 'px';
+  els.ctxMenu.style.top = y + 'px';
+}
+els.ctxMenu.addEventListener('click', (e) => {
+  const action = e.target.closest('.cm-item')?.dataset?.action;
+  if (!action || ctxTrackIdx < 0) { els.ctxMenu.hidden = true; return; }
+  const t = state.tracks[ctxTrackIdx];
+  if (action === 'play') playIndex(ctxTrackIdx);
+  else if (action === 'queue') { addToQueue(ctxTrackIdx); toast('Added to queue', 'ok'); }
+  else if (action === 'queue-next') {
+    state.queue.unshift(t.id);
+    saveQueue();
+    updateCounts();
+    toast('Will play next', 'ok');
+  }
+  else if (action === 'album') {
+    const m = t.meta || {};
+    const key = `${m.album||'Unknown Album'}|${m.albumArtist||m.artist||'Unknown Artist'}`;
+    const album = state.albums.find(a => a.key === key);
+    if (album) { setView('albums'); openAlbumPanel(album); }
+  }
+  else if (action === 'artist') {
+    const m = t.meta || {};
+    const artist = state.artists.find(a => a.name === (m.albumArtist || m.artist));
+    if (artist) filterToArtist(artist);
+  }
+  els.ctxMenu.hidden = true;
+});
+document.addEventListener('click', (e) => {
+  if (!els.ctxMenu.contains(e.target) && !els.ctxMenu.hidden) els.ctxMenu.hidden = true;
+});
+
+// ============ Playback ============
 async function playIndex(idx) {
   if (idx < 0 || idx >= state.tracks.length) return;
   const t = state.tracks[idx];
   if (!t) return;
-
-  // If metadata hasn't been parsed yet, do it now (priority parse).
-  // Playback doesn't depend on metadata, but we want the readouts populated.
   if (!t.meta) {
     try {
-      const result = await metadataPool.parse(t.file);
+      const result = await metadataPool.parse(t.file, false);
       t.meta = result.meta;
-      if (result.artBlob) {
-        const url = URL.createObjectURL(result.artBlob);
-        t.art = url;
-        state.artUrls.add(url);
-        await cache.setArt(t.file, result.artBlob);
-      }
-      await cache.setMeta(t.file, result.meta);
-    } catch (e) {
-      // Even if metadata fails, we can still try to play.
+    } catch {
       t.meta = { format: t.ext.toUpperCase() };
     }
   }
-
-  // Priority art load for the playing track
-  if (!t.art && !t._artTried) {
-    queueArtLoad(t);
-  }
-  els.libStatus.textContent = `Decoding ${t.name}…`;
-  setStatus('decoding', 'DECODING');
+  if (!t.art && !t._artTried) queueArtLoad(t);
 
   try {
-    // Ensure context at the source sample rate
     await engine.ensure(t.meta.sampleRate || null);
-
-    // Build visualizers + measurement hook on first context
-    if (!visualizers) {
-      visualizers = new Visualizers({
-        needleL: els.needleL,
-        needleR: els.needleR,
-        peakL: els.peakL,
-        peakR: els.peakR,
-        scaleL: els.vuScaleL,
-        scaleR: els.vuScaleR,
-        spectrum: els.spectrum,
-        engine,
-      });
-      visualizers.start();
+    if (!engine.onTrackEnd) {
       engine.onTrackEnd = onTrackEnded;
       engine.onTimeUpdate = onTimeUpdate;
+      startSpectrum();
     }
-
-    // Apply ReplayGain if available
     const rg = t.meta.rgTrackGain;
     engine.setReplayGain(rg ?? 0, !!state.useReplayGain && rg != null);
-
     const buffer = await engine.decode(t.file);
     await engine.playBuffer(buffer, t.id, t.meta.sampleRate || buffer.sampleRate);
 
@@ -493,45 +735,32 @@ async function playIndex(idx) {
     updateNowPlaying(t, buffer);
     updateSignalChain(t);
     updatePlayButton(true);
-    setStatus('playing', 'PLAYING');
-    els.libStatus.textContent = `${state.tracks.length} tracks loaded`;
-
-    // Async analyses on the buffer
     runAnalyses(t, buffer);
-
-    // Schedule next track for gapless if available
     scheduleGapless(idx, buffer);
-
     scheduleRender();
+    if (state.view === 'now') updateNowView();
   } catch (e) {
     console.error(e);
     toast(`Playback failed: ${e.message}`, 'warn');
-    setStatus('error', 'ERROR');
     updatePlayButton(false);
-    els.libStatus.textContent = `${state.tracks.length} tracks loaded`;
   }
 }
 
-async function scheduleGapless(idx, currentBuffer) {
+async function scheduleGapless(idx, buffer) {
   if (!state.gapless) return;
-  const remaining = currentBuffer.duration;
-  if (remaining < 6) return; // too short
-  // Wait until ~5s before end
-  const wait = (remaining - 5) * 1000;
+  if (buffer.duration < 6) return;
+  const wait = (buffer.duration - 5) * 1000;
   setTimeout(async () => {
-    if (state.currentIdx !== idx) return; // user changed track
+    if (state.currentIdx !== idx) return;
     const nextIdx = computeNextIdx(idx);
-    if (nextIdx === idx || nextIdx < 0) return;
+    if (nextIdx < 0 || nextIdx === idx) return;
     const nt = state.tracks[nextIdx];
     if (!nt || !nt.meta) return;
-    // Only gapless if same sample rate (else we'd need ctx rebuild = not gapless)
     if (nt.meta.sampleRate && nt.meta.sampleRate !== engine.ctx.sampleRate) return;
     try {
       const nb = await engine.decode(nt.file);
-      if (state.currentIdx !== idx) return; // user changed since
+      if (state.currentIdx !== idx) return;
       engine.scheduleNext(nb, nt.id);
-      // When gapless triggers, the engine's onTrackEnd will fire for the OLD track,
-      // but currentTrackId already changed via the promote handler. We update UI here.
       const delay = Math.max(0, (engine.nextScheduledAt - engine.ctx.currentTime) * 1000);
       setTimeout(() => {
         if (engine.currentTrackId === nt.id) {
@@ -540,24 +769,16 @@ async function scheduleGapless(idx, currentBuffer) {
           updateSignalChain(nt);
           runAnalyses(nt, nb);
           scheduleRender();
-          // chain next-next gapless
           scheduleGapless(nextIdx, nb);
         }
       }, delay + 10);
-    } catch (e) {
-      console.warn('gapless decode failed', e);
-    }
+    } catch {}
   }, wait);
 }
 
-function onTrackEnded(trackId) {
-  // If gapless promoted, currentSource is the new buffer and currentTrackId already updated.
-  // This fires for tracks that ended without gapless succession.
-  if (engine.currentSource) return; // gapless promoted, ignore
-  if (state.repeat === 'one') {
-    playIndex(state.currentIdx);
-    return;
-  }
+function onTrackEnded() {
+  if (engine.currentSource) return;
+  if (state.repeat === 'one') { playIndex(state.currentIdx); return; }
   playNext();
 }
 
@@ -566,32 +787,30 @@ function onTimeUpdate(cur, dur) {
   const pct = cur / dur;
   els.scrubFill.style.width = (pct * 100) + '%';
   els.scrubKnob.style.left = (pct * 100) + '%';
-  els.timeCur.textContent = fmtTime(cur);
-  els.timeTot.textContent = fmtTime(dur);
-
-  // tonearm rotation: -30deg (rest) → +18deg (end)
-  if (state.view === 'vinyl' && els.tonearm) {
-    const angle = -30 + pct * 48;
-    els.tonearm.style.transform = `rotate(${angle}deg)`;
-  }
+  els.timeCur.textContent = formatTime(cur);
+  els.timeTot.textContent = formatTime(dur);
 }
 
 function computeNextIdx(fromIdx) {
+  if (state.queue.length) {
+    const idMap = new Map(state.tracks.map((t, i) => [t.id, i]));
+    const next = state.queue.shift();
+    saveQueue();
+    updateCounts();
+    return idMap.get(next) ?? -1;
+  }
   if (state.shuffle) {
     if (!state.shuffleBag.length) state.shuffleBag = makeShuffleBag(fromIdx);
     return state.shuffleBag.shift() ?? -1;
   }
   let n = fromIdx + 1;
-  if (n >= state.tracks.length) {
-    if (state.repeat === 'all') n = 0;
-    else return -1;
-  }
+  if (n >= state.tracks.length) return state.repeat === 'all' ? 0 : -1;
   return n;
 }
-function makeShuffleBag(excludeIdx) {
-  const all = state.tracks.map((_, i) => i).filter(i => i !== excludeIdx);
+function makeShuffleBag(exclude) {
+  const all = state.tracks.map((_, i) => i).filter(i => i !== exclude);
   for (let i = all.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(Math.random() * (i+1));
     [all[i], all[j]] = [all[j], all[i]];
   }
   return all;
@@ -600,71 +819,39 @@ function makeShuffleBag(excludeIdx) {
 function playNext() {
   if (!state.tracks.length) return;
   const next = computeNextIdx(state.currentIdx);
-  if (next < 0) {
-    engine.pause();
-    setStatus('idle', 'END');
-    updatePlayButton(false);
-    return;
-  }
+  if (next < 0) { engine.pause(); updatePlayButton(false); return; }
   playIndex(next);
 }
 function playPrev() {
-  if (!state.tracks.length) return;
   if (engine.getCurrentTime() > 3) { engine.seek(0); return; }
   let p = state.currentIdx - 1;
   if (p < 0) p = state.tracks.length - 1;
   playIndex(p);
 }
-
 function togglePlay() {
   if (state.currentIdx < 0) {
-    if (state.tracks.length) playIndex(state.filtered[0] ?? 0);
+    if (state.filtered.length) playIndex(state.filtered[0]);
     return;
   }
-  if (engine.playing) {
-    engine.pause();
-    updatePlayButton(false);
-    setStatus('paused', 'PAUSED');
-  } else {
-    engine.resume();
-    updatePlayButton(true);
-    setStatus('playing', 'PLAYING');
-  }
+  if (engine.playing) { engine.pause(); updatePlayButton(false); }
+  else { engine.resume(); updatePlayButton(true); }
 }
-
 function updatePlayButton(playing) {
   els.iconPlay.style.display = playing ? 'none' : '';
   els.iconPause.style.display = playing ? '' : 'none';
-  els.app.dataset.playing = String(playing);
-}
-function setStatus(kind, label) {
-  // McIntosh: just toggle the ingest LED for visual feedback.
-  // Label is informational only — shown in libStatus if mid-ingest.
-  if (els.ingestLed) {
-    els.ingestLed.classList.toggle('idle', kind !== 'playing' && kind !== 'decoding');
-  }
-}
-function fmtTime(s) {
-  if (!isFinite(s)) return '0:00';
-  s = Math.max(0, Math.floor(s));
-  const m = Math.floor(s / 60);
-  const ss = String(s % 60).padStart(2, '0');
-  return `${m}:${ss}`;
 }
 
-els.btnPlay.addEventListener('click', () => togglePlay());
-els.btnPrev.addEventListener('click', () => playPrev());
-els.btnNext.addEventListener('click', () => playNext());
+els.btnPlay.addEventListener('click', togglePlay);
+els.btnPrev.addEventListener('click', playPrev);
+els.btnNext.addEventListener('click', playNext);
 els.btnShuffle.addEventListener('click', () => {
   state.shuffle = !state.shuffle;
   els.btnShuffle.setAttribute('aria-pressed', state.shuffle);
-  els.btnShuffle.classList.toggle('on', state.shuffle);
   state.shuffleBag = state.shuffle ? makeShuffleBag(state.currentIdx) : [];
 });
 els.btnRepeat.addEventListener('click', () => {
   state.repeat = state.repeat === 'off' ? 'all' : state.repeat === 'all' ? 'one' : 'off';
   els.btnRepeat.setAttribute('aria-pressed', state.repeat !== 'off');
-  els.btnRepeat.classList.toggle('on', state.repeat !== 'off');
   els.btnRepeat.title = `Repeat: ${state.repeat}`;
 });
 els.btnGapless.addEventListener('click', () => {
@@ -675,159 +862,166 @@ els.btnRG.addEventListener('click', () => {
   state.useReplayGain = !state.useReplayGain;
   els.btnRG.setAttribute('aria-pressed', state.useReplayGain);
   const t = state.tracks[state.currentIdx];
-  if (t && t.meta && t.meta.rgTrackGain != null) {
-    engine.setReplayGain(t.meta.rgTrackGain, state.useReplayGain);
-  }
+  if (t?.meta?.rgTrackGain != null) engine.setReplayGain(t.meta.rgTrackGain, state.useReplayGain);
 });
-
-els.scrub.addEventListener('click', (e) => {
+els.scrubBar.addEventListener('click', (e) => {
   const dur = engine.getDuration();
   if (!isFinite(dur) || dur <= 0) return;
-  const rect = els.scrub.getBoundingClientRect();
-  const pct = (e.clientX - rect.left) / rect.width;
-  engine.seek(pct * dur);
+  const rect = els.scrubBar.getBoundingClientRect();
+  engine.seek(((e.clientX - rect.left) / rect.width) * dur);
+});
+els.volSlider.addEventListener('input', () => {
+  const v = els.volSlider.value / 100;
+  engine.setVolume(v);
+  els.volPct.textContent = els.volSlider.value;
 });
 
-// ---------- Volume knob (scroll wheel on hover) ----------
-let knobValue = 85;
-function applyKnob(v) {
-  knobValue = Math.max(0, Math.min(100, Math.round(v)));
-  engine.setVolume(knobValue / 100);
-  els.volPct.textContent = knobValue;
-  els.volKnob.setAttribute('aria-valuenow', knobValue);
-  // Map 0..100 → -135deg..+135deg
-  const angle = -135 + (knobValue / 100) * 270;
-  els.volKnob.style.transform = `rotate(${angle}deg)`;
-}
-els.volKnob.addEventListener('wheel', (e) => {
-  e.preventDefault();
-  // 1 step per wheel notch; shift for finer
-  const step = e.shiftKey ? 1 : 3;
-  const dir = e.deltaY > 0 ? -1 : 1;
-  applyKnob(knobValue + step * dir);
-}, { passive: false });
-els.volKnob.addEventListener('keydown', (e) => {
-  if (e.key === 'ArrowUp' || e.key === 'ArrowRight') { e.preventDefault(); applyKnob(knobValue + 2); }
-  else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') { e.preventDefault(); applyKnob(knobValue - 2); }
-});
-// Initial rotation
-applyKnob(knobValue);
-
-// ---------- Now-playing UI ----------
+// ============ Now playing UI ============
 function updateNowPlaying(t, buffer) {
   const m = t.meta || {};
   const title = m.title || stripExt(t.name);
-  const artist = m.artist || '';
-  const album = m.album || '';
+  const artist = m.artist || '—';
+  els.npTitle.textContent = title;
+  els.npArtist.textContent = artist;
+  els.npArt.style.backgroundImage = t.art ? `url(${t.art})` : '';
+  updateNowView();
+}
 
-  els.npTitle.textContent = title.toUpperCase();
-  els.npArtist.textContent = artist || '—';
-  els.npAlbum.textContent = album.toUpperCase();
-
-  els.rFormat.textContent = (m.format || t.ext).toUpperCase();
-  els.rRate.textContent = m.sampleRate ? formatSRShort(m.sampleRate) : (buffer ? formatSRShort(buffer.sampleRate) : '—');
-  els.rBits.textContent = m.bitDepth ? `${m.bitDepth}` : (m.isDsd ? '1' : '—');
-  els.rChans.textContent = (m.channels || (buffer ? buffer.numberOfChannels : null)) || '—';
-
-  renderVerdicts(t);
-
-  els.vinylTitle.textContent = title;
-  els.vinylArtist.textContent = artist;
-  if (t.art) {
-    els.labelArt.style.backgroundImage = `url(${t.art})`;
-    els.sleeveFront.style.backgroundImage = `url(${t.art})`;
-    els.recordLabel.classList.remove('no-art');
-  } else {
-    els.labelArt.style.backgroundImage = '';
-    els.sleeveFront.style.backgroundImage = '';
-    els.recordLabel.classList.add('no-art');
+function updateNowView() {
+  const idx = state.currentIdx;
+  if (idx < 0) {
+    els.nowTitle.textContent = 'Nothing playing';
+    els.nowArtist.textContent = '—';
+    els.nowAlbum.textContent = '—';
+    els.nsFormat.textContent = '—';
+    els.nsRate.textContent = '—';
+    els.nsBits.textContent = '—';
+    els.nsChans.textContent = '—';
+    els.nsDR.textContent = '—';
+    els.nsHiRes.textContent = '—';
+    els.nowArt.style.backgroundImage = '';
+    els.nowArtGlow.style.backgroundImage = '';
+    return;
   }
-  els.linerTitle.textContent = title;
-  els.linerArtist.textContent = artist;
-  els.linerAlbum.textContent = album || '—';
-  els.linerYear.textContent = m.originalYear || m.year || '—';
-  els.linerFormat.textContent = (m.format || t.ext).toUpperCase();
-  els.linerSample.textContent = m.sampleRate ? formatSR(m.sampleRate) : '—';
-  els.linerBits.textContent = m.bitDepth ? `${m.bitDepth}-bit` : (m.isDsd ? '1-bit DSD' : '—');
-  els.linerChans.textContent = m.channels ? `${m.channels}` : '—';
-  els.linerEncoder.textContent = m.encoder || m.encodedBy || '—';
-  els.linerRG.textContent = (m.rgTrackGain != null) ? `${m.rgTrackGain.toFixed(2)} dB` : '—';
+  const t = state.tracks[idx];
+  const m = t.meta || {};
+  els.nowTitle.textContent = m.title || stripExt(t.name);
+  els.nowArtist.textContent = m.artist || '—';
+  els.nowAlbum.textContent = (m.album || '').toUpperCase();
+  els.nsFormat.textContent = (m.format || t.ext).toUpperCase();
+  els.nsRate.textContent = m.sampleRate ? formatSR(m.sampleRate) : '—';
+  els.nsBits.textContent = m.bitDepth ? `${m.bitDepth}-bit` : (m.isDsd ? '1-bit DSD' : '—');
+  els.nsChans.textContent = m.channels || '—';
+  els.nsDR.textContent = t.drValue != null ? `DR${t.drValue}` : '—';
+  els.nsHiRes.textContent = t.hiRes ? t.hiRes.label : '—';
+  if (t.art) {
+    els.nowArt.style.backgroundImage = `url(${t.art})`;
+    els.nowArtGlow.style.backgroundImage = `url(${t.art})`;
+  } else {
+    els.nowArt.style.backgroundImage = '';
+    els.nowArtGlow.style.backgroundImage = '';
+  }
+  renderVerdicts(t, els.nowVerdicts);
 }
 
-function formatSRShort(hz) {
-  if (!hz) return '—';
-  if (hz >= 1000) return (hz/1000).toFixed(hz % 1000 === 0 ? 0 : 1) + 'k';
-  return String(hz);
-}
-
-function renderVerdicts(t) {
+function renderVerdicts(t, container) {
   const out = [];
   if (t.hiRes) {
-    if (t.hiRes.verdict === 'true') out.push({ cls: 'ok', label: 'HI-RES ✓' });
+    if (t.hiRes.verdict === 'true') out.push({ cls: 'ok', label: 'HI-RES VERIFIED' });
     else if (t.hiRes.verdict === 'fake') out.push({ cls: 'bad', label: t.hiRes.label });
   }
   if (t.drValue != null) {
     const cls = t.drValue >= 14 ? 'ok' : t.drValue >= 8 ? 'warn' : 'bad';
     out.push({ cls, label: `DR ${t.drValue}` });
   }
-  els.verdicts.innerHTML = out.map(v => `<span class="verdict ${v.cls}">${v.label}</span>`).join('');
+  container.innerHTML = out.map(v => `<span class="verdict ${v.cls}">${v.label}</span>`).join('');
 }
 
 function updateSignalChain(t) {
   const m = t.meta || {};
   const fileRate = m.sampleRate;
   const engineRate = engine.ctx ? engine.ctx.sampleRate : null;
-
-  els.chainFile.textContent = fileRate ? formatSR(fileRate) : '— — —';
-  els.chainEngine.textContent = engineRate ? formatSR(engineRate) : '— — —';
-  els.chainOutput.textContent = engineRate ? formatSR(engineRate) : '— — —';
-  els.chainOutput.dataset.stage = 'output';
-  els.chainEngine.dataset.stage = 'engine';
-  els.chainFile.dataset.stage = 'file';
-
-  els.signalChain.classList.remove('match-ok', 'match-warn', 'match-bad');
-  els.signalChain.removeAttribute('data-mismatch');
+  els.chainFile.textContent = fileRate ? formatSRShort(fileRate) : '—';
+  els.chainEngine.textContent = engineRate ? formatSRShort(engineRate) : '—';
+  els.chainOutput.textContent = engineRate ? formatSRShort(engineRate) : '—';
+  els.signalChain.classList.remove('match-ok', 'match-warn');
   if (fileRate && engineRate) {
-    if (fileRate === engineRate) {
-      els.signalChain.classList.add('match-ok');
-    } else {
-      els.signalChain.classList.add('match-warn');
-      els.signalChain.setAttribute('data-mismatch', 'engine');
-    }
+    els.signalChain.classList.add(fileRate === engineRate ? 'match-ok' : 'match-warn');
   }
-
-  els.linerDR.textContent = t.drValue != null ? `DR${t.drValue}` : 'computing…';
-  els.linerHiRes.textContent = t.hiRes ? t.hiRes.label : 'computing…';
 }
 
-// ---------- Async analyses ----------
+// ============ Spectrum ============
+function startSpectrum() {
+  if (spectrumAnim) return;
+  const canvas = els.spectrum;
+  const g = canvas.getContext('2d', { alpha: false });
+  let grad = null;
+  let lastW = 0, lastH = 0;
+  let fftBuf = null;
+
+  const draw = () => {
+    spectrumAnim = requestAnimationFrame(draw);
+    if (state.view !== 'now') return;
+    if (!engine.analyser) return;
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    if (w !== lastW || h !== lastH) {
+      canvas.width = w * dpr; canvas.height = h * dpr;
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      grad = g.createLinearGradient(0, h, 0, 0);
+      grad.addColorStop(0, '#3a2a14');
+      grad.addColorStop(0.6, '#ffb454');
+      grad.addColorStop(1, '#ffd278');
+      lastW = w; lastH = h;
+    }
+    if (!fftBuf || fftBuf.length !== engine.analyser.frequencyBinCount) {
+      fftBuf = new Uint8Array(engine.analyser.frequencyBinCount);
+    }
+    engine.analyser.getByteFrequencyData(fftBuf);
+    g.fillStyle = '#141414'; g.fillRect(0, 0, w, h);
+    const sampleRate = engine.ctx ? engine.ctx.sampleRate : 48000;
+    const nyquist = sampleRate / 2;
+    const minF = 20, maxF = Math.min(20000, nyquist);
+    const logMin = Math.log10(minF), logMax = Math.log10(maxF);
+    const cols = Math.max(60, Math.floor(w / 4));
+    const colW = w / cols;
+    g.fillStyle = grad;
+    g.beginPath();
+    for (let c = 0; c < cols; c++) {
+      const f0 = Math.pow(10, logMin + (c/cols)*(logMax-logMin));
+      const f1 = Math.pow(10, logMin + ((c+1)/cols)*(logMax-logMin));
+      const b0 = Math.floor((f0 / nyquist) * fftBuf.length);
+      const b1 = Math.max(b0+1, Math.floor((f1 / nyquist) * fftBuf.length));
+      let sum = 0, n = 0;
+      for (let b = b0; b < b1 && b < fftBuf.length; b++) { sum += fftBuf[b]; n++; }
+      const amp = (n ? sum/n : 0) / 255;
+      const barH = Math.pow(amp, 0.85) * (h - 4);
+      g.rect(c*colW + 0.5, h - barH, colW - 1, barH);
+    }
+    g.fill();
+  };
+  draw();
+}
+
+// ============ Analyses (DR + hi-res) ============
 async function runAnalyses(t, buffer) {
-  // Skip if already cached on track
   if (t.drValue == null) {
     setTimeout(() => {
       try {
-        // Build interleaved Float32Array for WASM, or de-interleave channels for JS
         let dr = null;
         if (core.available) {
-          const interleaved = interleaveBuffer(buffer);
-          dr = core.computeDR(interleaved, buffer.sampleRate, buffer.numberOfChannels);
+          const inter = interleave(buffer);
+          dr = core.computeDR(inter, buffer.sampleRate, buffer.numberOfChannels);
         }
         if (dr == null) {
-          // JS fallback
-          const channels = [];
-          for (let i = 0; i < buffer.numberOfChannels; i++) channels.push(buffer.getChannelData(i));
-          dr = computeDR(channels, buffer.sampleRate);
+          const ch = [];
+          for (let i = 0; i < buffer.numberOfChannels; i++) ch.push(buffer.getChannelData(i));
+          dr = computeDR(ch, buffer.sampleRate);
         }
         t.drValue = dr;
-        if (t === state.tracks[state.currentIdx]) {
-          renderVerdicts(t);
-          els.linerDR.textContent = `DR${dr}`;
-        }
+        if (t === state.tracks[state.currentIdx]) updateNowView();
         scheduleRender();
-        if (t.meta) {
-          t.meta._dr = dr;
-          cache.setMeta(t.file, t.meta);
-        }
+        if (t.meta) { t.meta._dr = dr; cache.setMeta(t.file, t.meta); }
       } catch (e) { console.warn('DR failed', e); }
     }, 50);
   }
@@ -836,127 +1030,81 @@ async function runAnalyses(t, buffer) {
       try {
         let v = null;
         if (core.available) {
-          const interleaved = interleaveBuffer(buffer);
-          v = core.analyzeHiRes(
-            interleaved,
-            buffer.sampleRate,
-            buffer.numberOfChannels,
-            t.meta?.sampleRate || buffer.sampleRate,
-            t.meta?.bitDepth || 16,
-          );
+          const inter = interleave(buffer);
+          v = core.analyzeHiRes(inter, buffer.sampleRate, buffer.numberOfChannels, t.meta?.sampleRate || buffer.sampleRate, t.meta?.bitDepth || 16);
         }
         if (v == null) {
-          const channels = [];
-          for (let i = 0; i < buffer.numberOfChannels; i++) channels.push(buffer.getChannelData(i));
-          v = analyzeHiRes(channels, buffer.sampleRate, t.meta?.bitDepth || 16, t.meta?.sampleRate || buffer.sampleRate);
+          const ch = [];
+          for (let i = 0; i < buffer.numberOfChannels; i++) ch.push(buffer.getChannelData(i));
+          v = analyzeHiRes(ch, buffer.sampleRate, t.meta?.bitDepth || 16, t.meta?.sampleRate || buffer.sampleRate);
         }
         t.hiRes = v;
-        if (t === state.tracks[state.currentIdx]) {
-          renderVerdicts(t);
-          els.linerHiRes.textContent = v.label + (v.reason ? ` — ${v.reason}` : '');
-        }
+        if (t === state.tracks[state.currentIdx]) updateNowView();
         scheduleRender();
-        if (t.meta) {
-          t.meta._hiRes = v;
-          cache.setMeta(t.file, t.meta);
-        }
+        if (t.meta) { t.meta._hiRes = v; cache.setMeta(t.file, t.meta); }
       } catch (e) { console.warn('hi-res failed', e); }
     }, 150);
   }
 }
-
-// Build an interleaved Float32Array from an AudioBuffer.
-// Allocated fresh each call — buffer is large but only used briefly.
-function interleaveBuffer(buffer) {
-  const ch = buffer.numberOfChannels;
-  const len = buffer.length;
+function interleave(buffer) {
+  const ch = buffer.numberOfChannels, len = buffer.length;
   const out = new Float32Array(ch * len);
-  if (ch === 1) {
-    out.set(buffer.getChannelData(0));
-    return out;
-  }
-  const c0 = buffer.getChannelData(0);
-  const c1 = buffer.getChannelData(1);
-  for (let i = 0; i < len; i++) {
-    out[i * 2]     = c0[i];
-    out[i * 2 + 1] = c1[i];
-  }
+  if (ch === 1) { out.set(buffer.getChannelData(0)); return out; }
+  const c0 = buffer.getChannelData(0), c1 = buffer.getChannelData(1);
+  for (let i = 0; i < len; i++) { out[i*2] = c0[i]; out[i*2+1] = c1[i]; }
   return out;
 }
 
-// ---------- Measured-clean badge ----------
+// ============ Measurement ============
 els.badgeMeasured.addEventListener('click', async () => {
-  if (!engine.ctx) {
-    toast('Play something first so the engine is initialized', 'warn');
-    return;
-  }
+  if (!engine.ctx) { toast('Play something first', 'warn'); return; }
   els.badgeMeasured.classList.add('measuring');
-  els.badgeMeasuredLabel.textContent = 'MEASURING…';
+  els.badgeMeasuredLabel.textContent = 'Measuring…';
   try {
     const r = await measureSignalPath(engine.ctx);
     state.measured = r;
     els.badgeMeasured.classList.remove('measuring');
     if (r.clean) {
       els.badgeMeasured.classList.add('measured');
-      els.badgeMeasured.classList.remove('failed');
-      els.badgeMeasuredLabel.textContent = 'CLEAN';
+      els.badgeMeasuredLabel.textContent = `Clean ${r.thdnDb.toFixed(0)}dB`;
     } else {
-      els.badgeMeasured.classList.remove('measured');
       els.badgeMeasured.classList.add('failed');
-      els.badgeMeasuredLabel.textContent = 'NOISY';
+      els.badgeMeasuredLabel.textContent = `THD+N ${r.thdnDb.toFixed(0)}dB`;
     }
-    toast(`Signal path measured: THD+N ${r.thdnDb.toFixed(1)} dB`, r.clean ? 'ok' : 'warn');
   } catch (e) {
     els.badgeMeasured.classList.remove('measuring');
-    toast('Measurement failed: ' + e.message, 'warn');
+    toast('Measurement failed', 'warn');
   }
 });
 
-// ---------- View toggle ----------
-els.btnView.addEventListener('click', toggleView);
-function toggleView() {
-  state.view = state.view === 'library' ? 'vinyl' : 'library';
-  els.app.dataset.view = state.view;
-  els.viewLibrary.hidden = state.view !== 'library';
-  els.viewVinyl.hidden = state.view !== 'vinyl';
-  els.viewLabel.textContent = state.view === 'library' ? 'VINYL' : 'LIBRARY';
-  if (state.view === 'library' && virtualList) virtualList.refresh();
-}
-
-els.sleeve.addEventListener('click', () => {
-  els.sleeve.classList.toggle('flipped');
-});
-
-// ---------- Library scan ----------
+// ============ Scan ============
 els.btnScan.addEventListener('click', async () => {
   if (!state.tracks.length) { toast('Open a folder first', 'warn'); return; }
-  toast(`Scanning ${state.tracks.length} tracks for DR & hi-res — this may take a while`, 'ok');
-  let done = 0;
-  const work = state.tracks.slice();
-  // Sequential to avoid blowing up memory; decodeAudioData is expensive
-  for (const t of work) {
-    if (t.drValue != null && t.hiRes != null) { done++; continue; }
-    if (!t.meta) { done++; continue; }
+  toast(`Scanning ${state.tracks.length} tracks — this takes a while`, 'ok');
+  for (const t of state.tracks.slice()) {
+    if (t.drValue != null && t.hiRes != null) continue;
+    if (!t.meta) continue;
     try {
-      // Decode at default ctx if possible (no rate match for scanning)
       if (!engine.ctx) await engine.ensure(t.meta.sampleRate || null);
       const buffer = await engine.decode(t.file);
+      await new Promise(r => setTimeout(r, 0));
       runAnalyses(t, buffer);
-    } catch (e) {
-      console.warn('scan decode failed', t.name, e);
-    }
-    done++;
-    if (done % 5 === 0) els.libStatus.textContent = `Scanned ${done}/${work.length}`;
+    } catch {}
   }
-  els.libStatus.textContent = `${state.tracks.length} tracks loaded`;
   toast('Scan complete', 'ok');
 });
 
-// ---------- Keyboard ----------
+// ============ Search ============
+let searchDebounce = null;
+els.searchInput.addEventListener('input', () => {
+  if (searchDebounce) clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(() => { applyFilter(); scheduleRender(); }, 120);
+});
+
+// ============ Keyboard ============
 window.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return;
   if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
-  else if (e.code === 'KeyM') toggleView();
   else if (e.code === 'KeyS') els.btnShuffle.click();
   else if (e.code === 'KeyR') els.btnRepeat.click();
   else if (e.code === 'ArrowRight' && e.shiftKey) playNext();
@@ -964,9 +1112,34 @@ window.addEventListener('keydown', (e) => {
   else if (e.code === 'ArrowRight') engine.seek(Math.min(engine.getDuration(), engine.getCurrentTime() + 5));
   else if (e.code === 'ArrowLeft') engine.seek(Math.max(0, engine.getCurrentTime() - 5));
   else if (e.code === 'Slash') { e.preventDefault(); els.searchInput.focus(); }
+  else if (e.code === 'Digit1') setView('tracks');
+  else if (e.code === 'Digit2') setView('albums');
+  else if (e.code === 'Digit3') setView('artists');
+  else if (e.code === 'Digit4') setView('queue');
+  else if (e.code === 'Digit5') setView('now');
 });
 
-// ---------- Init ----------
+// ============ Helpers ============
+function cryptoId() { return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2); }
+function stripExt(name) { return name.replace(/\.[^.]+$/, ''); }
+function formatSR(hz) {
+  if (!hz) return '—';
+  if (hz >= 1000) return (hz/1000).toFixed(hz%1000 === 0 ? 0 : 1) + ' kHz';
+  return hz + ' Hz';
+}
+function formatSRShort(hz) {
+  if (!hz) return '—';
+  if (hz >= 1000) return (hz/1000).toFixed(hz%1000 === 0 ? 0 : 1) + 'k';
+  return String(hz);
+}
+function formatTime(s) {
+  if (!isFinite(s)) return '0:00';
+  s = Math.max(0, Math.floor(s));
+  const m = Math.floor(s/60);
+  return `${m}:${String(s%60).padStart(2,'0')}`;
+}
+
+// ============ Init ============
 function init() {
   virtualList = new VirtualList({
     scroller: els.libScroller,
@@ -975,27 +1148,18 @@ function init() {
     renderRow: (el, idx, listPos) => renderTrackRow(el, idx, listPos),
   });
   virtualList.setItems([]);
+  setView('tracks');
 
-  // Wait for WASM probe (non-blocking — just logs status)
+  els.navItems[0].classList.add('active');
+
   core.ready.then(() => {
-    if (core.available) {
-      console.info('[signal] Rust core active');
-    } else {
-      console.info('[signal] Rust core unavailable, JS-only mode');
-    }
+    if (core.available) console.info('[signal] Rust core active');
+    else console.info('[signal] Rust core unavailable, JS-only');
   });
 
-  if (!state.tracks.length) {
-    els.emptyScreen.hidden = false;
-  }
+  if (!state.tracks.length) els.emptyScreen.hidden = false;
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
 
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js').catch(() => {});
-  }
+  loadQueue().then(() => updateCounts());
 }
-
-function cryptoId() {
-  return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
-}
-
 init();

@@ -1,7 +1,7 @@
 // SIGNAL service worker — caches the app shell so the player works offline.
 // User audio files are NEVER cached; they're read fresh from the local drive each time.
 
-const CACHE = 'signal-shell-v4';
+const CACHE = 'signal-shell-v5';
 const SHELL = [
   './',
   './index.html',
