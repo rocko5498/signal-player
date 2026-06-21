@@ -24,13 +24,13 @@ class MetadataPool {
     }
   }
 
-  parse(file) {
+  parse(file, wantArt = false) {
     return new Promise((resolve) => {
       const id = ++this.id;
       this.callbacks.set(id, resolve);
       const w = this.workers[this.next];
       this.next = (this.next + 1) % this.workers.length;
-      w.postMessage({ id, file });
+      w.postMessage({ id, file, wantArt });
     });
   }
 }

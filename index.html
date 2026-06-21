@@ -10,213 +10,268 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%230a0a0a'/%3E%3Ccircle cx='32' cy='32' r='22' fill='none' stroke='%23ffb454' stroke-width='2'/%3E%3Ccircle cx='32' cy='32' r='6' fill='%23ffb454'/%3E%3C/svg%3E" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=DSEG7+Classic:wght@700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
 
-<div class="app" id="app" data-view="library">
+<div class="chassis" id="app" data-view="library">
 
-  <!-- ============ TOP BAR ============ -->
-  <header class="topbar">
-    <div class="brand">
-      <span class="mark">SIGNAL</span>
-      <span class="tag">Bit-perfect · Measured</span>
+  <!-- ============ FACEPLATE (top) ============ -->
+  <div class="faceplate">
+
+    <!-- Left badge: brand engraved into metal -->
+    <div class="brand-plate">
+      <span class="brand-mark">SIGNAL</span>
+      <span class="brand-sub">PRECISION&nbsp;·&nbsp;LOSSLESS</span>
     </div>
 
-    <div class="signal-chain" id="signalChain" title="File → Engine → Output sample rates">
-      <div class="stage" data-stage="file">
-        <span class="k">FILE</span>
-        <span class="v" id="chainFile">—</span>
-      </div>
-      <span class="arrow">→</span>
-      <div class="stage" data-stage="engine">
-        <span class="k">ENGINE</span>
-        <span class="v" id="chainEngine">—</span>
-      </div>
-      <span class="arrow">→</span>
-      <div class="stage" data-stage="output">
-        <span class="k">OUTPUT</span>
-        <span class="v" id="chainOutput">—</span>
+    <!-- Center recessed LCD display: signal chain + now-playing readout -->
+    <div class="lcd-bay">
+      <div class="lcd">
+        <div class="lcd-line lcd-chain" id="signalChain">
+          <span class="lcd-k">SOURCE</span><span class="lcd-v" id="chainFile">— — —</span>
+          <span class="lcd-sep">›</span>
+          <span class="lcd-k">DAC</span><span class="lcd-v" id="chainEngine">— — —</span>
+          <span class="lcd-sep">›</span>
+          <span class="lcd-k">OUT</span><span class="lcd-v" id="chainOutput">— — —</span>
+        </div>
+        <div class="lcd-divider"></div>
+        <div class="lcd-line lcd-np">
+          <div class="lcd-np-text">
+            <div class="lcd-title" id="npTitle">SIGNAL READY</div>
+            <div class="lcd-artist" id="npArtist">No source selected</div>
+          </div>
+          <div class="lcd-readout">
+            <div class="lcd-cell"><span class="lcd-cell-k">FMT</span><span class="lcd-cell-v" id="rFormat">—</span></div>
+            <div class="lcd-cell"><span class="lcd-cell-k">SR</span><span class="lcd-cell-v" id="rRate">—</span></div>
+            <div class="lcd-cell"><span class="lcd-cell-k">BIT</span><span class="lcd-cell-v" id="rBits">—</span></div>
+            <div class="lcd-cell"><span class="lcd-cell-k">CH</span><span class="lcd-cell-v" id="rChans">—</span></div>
+          </div>
+        </div>
+        <div class="lcd-album" id="npAlbum"></div>
       </div>
     </div>
 
-    <div class="badges">
-      <button class="badge" id="badgeMeasured" title="Run signal measurement">
-        <span class="dot"></span>
-        <span id="badgeMeasuredLabel">NOT MEASURED</span>
+    <!-- Right: power lamps + measurement -->
+    <div class="lamp-bay">
+      <div class="lamp" id="lampPower">
+        <span class="lamp-glow"></span>
+        <span class="lamp-label">POWER</span>
+      </div>
+      <button class="lamp lamp-btn" id="badgeMeasured" title="Run signal-path measurement">
+        <span class="lamp-glow"></span>
+        <span class="lamp-label" id="badgeMeasuredLabel">MEASURE</span>
       </button>
     </div>
+  </div>
 
-    <div class="spacer"></div>
+  <!-- ============ VU METER BANK ============ -->
+  <div class="meter-bank">
+    <div class="vu-housing">
+      <div class="vu-screw tl"></div><div class="vu-screw tr"></div>
+      <div class="vu-screw bl"></div><div class="vu-screw br"></div>
 
-    <button class="action" id="btnView" title="Toggle view (M)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
-      <span id="viewLabel">VINYL</span>
-    </button>
-    <button class="action" id="btnScan" title="Scan library for hi-res authenticity & DR">SCAN</button>
-    <button class="action" id="btnOpen">FILES</button>
-    <button class="action primary" id="btnOpenFolder">FOLDER</button>
-  </header>
-
-  <!-- ============ LIBRARY VIEW ============ -->
-  <main class="view view-library" id="viewLibrary">
-
-    <aside class="library">
-      <div class="lib-head">
-        <span class="label">Library</span>
-        <span class="count" id="libCount">0 tracks</span>
+      <div class="vu-pair">
+        <div class="vu" data-channel="L">
+          <svg class="vu-face" viewBox="0 0 200 110" preserveAspectRatio="xMidYMid meet">
+            <defs>
+              <radialGradient id="vuGlowL" cx="50%" cy="100%" r="100%">
+                <stop offset="0%" stop-color="#ffd278" stop-opacity="0.55"/>
+                <stop offset="55%" stop-color="#ffb454" stop-opacity="0.15"/>
+                <stop offset="100%" stop-color="#ffb454" stop-opacity="0"/>
+              </radialGradient>
+            </defs>
+            <rect width="200" height="110" fill="url(#vuGlowL)"/>
+            <!-- arc scale lines drawn by JS into this group -->
+            <g class="vu-scale" id="vuScaleL"></g>
+            <!-- moving needle -->
+            <line class="vu-needle" id="needleL" x1="100" y1="105" x2="100" y2="22"/>
+            <circle class="vu-pivot" cx="100" cy="105" r="4"/>
+          </svg>
+          <span class="vu-label">L</span>
+          <span class="vu-peak-lamp" id="peakL"></span>
+        </div>
+        <div class="vu" data-channel="R">
+          <svg class="vu-face" viewBox="0 0 200 110" preserveAspectRatio="xMidYMid meet">
+            <rect width="200" height="110" fill="url(#vuGlowL)"/>
+            <g class="vu-scale" id="vuScaleR"></g>
+            <line class="vu-needle" id="needleR" x1="100" y1="105" x2="100" y2="22"/>
+            <circle class="vu-pivot" cx="100" cy="105" r="4"/>
+          </svg>
+          <span class="vu-label">R</span>
+          <span class="vu-peak-lamp" id="peakR"></span>
+        </div>
       </div>
-      <div class="lib-search">
-        <input id="searchInput" type="text" placeholder="filter title, artist, album…" spellcheck="false" autocomplete="off" />
-      </div>
-      <div class="lib-scroller" id="libScroller">
-        <div class="lib-spacer" id="libSpacer"></div>
-        <div class="lib-rows" id="libRows"></div>
-      </div>
-      <div class="lib-foot" id="libFoot">
-        <span id="libStatus">No library loaded</span>
-      </div>
-    </aside>
+    </div>
 
-    <section class="stage-panel">
-      <div class="instrument">
+    <!-- Spectrum analyzer panel next to the VUs -->
+    <div class="spectrum-housing">
+      <div class="vu-screw tl"></div><div class="vu-screw tr"></div>
+      <div class="vu-screw bl"></div><div class="vu-screw br"></div>
+      <div class="spectrum-glass">
+        <canvas class="spectrum" id="spectrum"></canvas>
+        <span class="spectrum-label">SPECTRUM · 20Hz – 20kHz</span>
+      </div>
+      <div class="verdicts-row" id="verdicts"></div>
+    </div>
+  </div>
 
-        <!-- now playing block -->
-        <div class="nowplaying">
-          <div class="np-left">
-            <div class="eyebrow">
-              <span class="dot idle" id="statusDot"></span>
-              <span id="statusText">STANDBY</span>
+  <!-- ============ LIBRARY + STAGE ============ -->
+  <div class="cabinet" id="cabinet">
+
+    <!-- Library mode: recessed display panel with the track index -->
+    <div class="view view-library" id="viewLibrary">
+      <div class="library-housing">
+        <div class="vu-screw tl"></div><div class="vu-screw tr"></div>
+        <div class="vu-screw bl"></div><div class="vu-screw br"></div>
+
+        <div class="lib-bezel">
+          <div class="lib-head">
+            <div class="lib-tabs">
+              <span class="tab active">LIBRARY</span>
+              <span class="tab-divider"></span>
+              <span class="tab-count" id="libCount">0 tracks</span>
             </div>
-            <h1 id="npTitle">Nothing playing</h1>
-            <div class="np-artist" id="npArtist">Open a folder to begin</div>
-            <div class="np-album" id="npAlbum"></div>
+            <div class="lib-search-wrap">
+              <span class="search-icon">⌕</span>
+              <input id="searchInput" type="text" placeholder="filter" spellcheck="false" autocomplete="off" />
+            </div>
           </div>
-          <div class="np-right">
-            <div class="readout">
-              <div class="cell"><div class="k">Format</div><div class="v dim" id="rFormat">—</div></div>
-              <div class="cell"><div class="k">Sample Rate</div><div class="v dim" id="rRate">—</div></div>
-              <div class="cell"><div class="k">Bit Depth</div><div class="v dim" id="rBits">—</div></div>
-              <div class="cell"><div class="k">Channels</div><div class="v dim" id="rChans">—</div></div>
-            </div>
-            <div class="verdicts" id="verdicts"></div>
+
+          <div class="lib-scroller" id="libScroller">
+            <div class="lib-spacer" id="libSpacer"></div>
+            <div class="lib-rows" id="libRows"></div>
+          </div>
+
+          <div class="lib-foot">
+            <span class="lib-led idle" id="ingestLed"></span>
+            <span id="libStatus">No source loaded</span>
+            <span class="lib-foot-right">
+              <button class="text-btn" id="btnScan" title="Scan for DR + hi-res">SCAN</button>
+              <button class="text-btn" id="btnOpen">FILES</button>
+              <button class="text-btn primary" id="btnOpenFolder">FOLDER</button>
+            </span>
           </div>
         </div>
+      </div>
+    </div>
 
-        <!-- meters + spectrum -->
-        <div class="meters">
-          <div class="meter-axis">
-            <span></span>
-            <div class="axis">
-              <span>-60</span><span>-40</span><span>-20</span><span>-12</span><span>-6</span><span class="zero">0</span><span class="peak">+3</span>
+    <!-- Vinyl mode -->
+    <div class="view view-vinyl" id="viewVinyl" hidden>
+      <div class="turntable-housing">
+        <div class="vu-screw tl"></div><div class="vu-screw tr"></div>
+        <div class="vu-screw bl"></div><div class="vu-screw br"></div>
+        <div class="turntable">
+          <div class="platter-area">
+            <div class="platter" id="platter">
+              <div class="record" id="record">
+                <div class="grooves"></div>
+                <div class="label" id="recordLabel">
+                  <div class="label-art" id="labelArt"></div>
+                  <div class="label-text">
+                    <div class="lt-title" id="vinylTitle">—</div>
+                    <div class="lt-artist" id="vinylArtist">—</div>
+                  </div>
+                </div>
+              </div>
+              <div class="spindle"></div>
+            </div>
+            <div class="tonearm" id="tonearm">
+              <div class="arm-pivot"></div>
+              <div class="arm"></div>
+              <div class="headshell"></div>
             </div>
           </div>
-          <div class="meter-row">
-            <span class="ch">L</span>
-            <canvas class="meter" id="meterL"></canvas>
-          </div>
-          <div class="meter-row">
-            <span class="ch">R</span>
-            <canvas class="meter" id="meterR"></canvas>
-          </div>
-          <div class="spectrum-wrap">
-            <span class="spectrum-label">SPECTRUM · 20Hz – 20kHz · log</span>
-            <canvas class="spectrum" id="spectrum"></canvas>
-          </div>
-        </div>
-
-      </div>
-    </section>
-  </main>
-
-  <!-- ============ VINYL VIEW ============ -->
-  <main class="view view-vinyl" id="viewVinyl" hidden>
-    <div class="turntable">
-      <div class="platter-area">
-        <div class="platter" id="platter">
-          <div class="record" id="record">
-            <div class="grooves"></div>
-            <div class="label" id="recordLabel">
-              <div class="label-art" id="labelArt"></div>
-              <div class="label-text">
-                <div class="lt-title" id="vinylTitle">—</div>
-                <div class="lt-artist" id="vinylArtist">—</div>
+          <aside class="sleeve" id="sleeve">
+            <div class="sleeve-front" id="sleeveFront"></div>
+            <div class="sleeve-back" id="sleeveBack">
+              <div class="liner">
+                <div class="liner-row"><span class="lk">TITLE</span><span class="lv" id="linerTitle">—</span></div>
+                <div class="liner-row"><span class="lk">ARTIST</span><span class="lv" id="linerArtist">—</span></div>
+                <div class="liner-row"><span class="lk">ALBUM</span><span class="lv" id="linerAlbum">—</span></div>
+                <div class="liner-row"><span class="lk">YEAR</span><span class="lv" id="linerYear">—</span></div>
+                <div class="liner-row"><span class="lk">FORMAT</span><span class="lv" id="linerFormat">—</span></div>
+                <div class="liner-row"><span class="lk">SAMPLE</span><span class="lv" id="linerSample">—</span></div>
+                <div class="liner-row"><span class="lk">BITS</span><span class="lv" id="linerBits">—</span></div>
+                <div class="liner-row"><span class="lk">CHANS</span><span class="lv" id="linerChans">—</span></div>
+                <div class="liner-row"><span class="lk">DR</span><span class="lv" id="linerDR">—</span></div>
+                <div class="liner-row"><span class="lk">HI-RES</span><span class="lv" id="linerHiRes">—</span></div>
+                <div class="liner-row"><span class="lk">ENCODER</span><span class="lv" id="linerEncoder">—</span></div>
+                <div class="liner-row"><span class="lk">RG</span><span class="lv" id="linerRG">—</span></div>
               </div>
             </div>
-          </div>
-          <div class="spindle"></div>
-        </div>
-        <div class="tonearm" id="tonearm">
-          <div class="arm-pivot"></div>
-          <div class="arm"></div>
-          <div class="headshell"></div>
+          </aside>
         </div>
       </div>
-      <aside class="sleeve" id="sleeve">
-        <div class="sleeve-front" id="sleeveFront"></div>
-        <div class="sleeve-back" id="sleeveBack">
-          <div class="liner">
-            <div class="liner-row"><span class="lk">Title</span><span class="lv" id="linerTitle">—</span></div>
-            <div class="liner-row"><span class="lk">Artist</span><span class="lv" id="linerArtist">—</span></div>
-            <div class="liner-row"><span class="lk">Album</span><span class="lv" id="linerAlbum">—</span></div>
-            <div class="liner-row"><span class="lk">Year</span><span class="lv" id="linerYear">—</span></div>
-            <div class="liner-row"><span class="lk">Format</span><span class="lv" id="linerFormat">—</span></div>
-            <div class="liner-row"><span class="lk">Sample</span><span class="lv" id="linerSample">—</span></div>
-            <div class="liner-row"><span class="lk">Bit Depth</span><span class="lv" id="linerBits">—</span></div>
-            <div class="liner-row"><span class="lk">Channels</span><span class="lv" id="linerChans">—</span></div>
-            <div class="liner-row"><span class="lk">Dynamic Range</span><span class="lv" id="linerDR">—</span></div>
-            <div class="liner-row"><span class="lk">Hi-Res Check</span><span class="lv" id="linerHiRes">—</span></div>
-            <div class="liner-row"><span class="lk">Encoder</span><span class="lv" id="linerEncoder">—</span></div>
-            <div class="liner-row"><span class="lk">ReplayGain</span><span class="lv" id="linerRG">—</span></div>
+    </div>
+  </div>
+
+  <!-- ============ TRANSPORT (bottom plate) ============ -->
+  <div class="transport-plate">
+
+    <!-- Time / scrub recessed -->
+    <div class="scrub-housing">
+      <span class="time-lcd" id="timeCur">0:00</span>
+      <div class="scrub-track" id="scrub">
+        <div class="scrub-fill" id="scrubFill"></div>
+        <div class="scrub-knob" id="scrubKnob"></div>
+      </div>
+      <span class="time-lcd right" id="timeTot">0:00</span>
+    </div>
+
+    <div class="bottom-row">
+
+      <!-- Mode lamps (left) -->
+      <div class="mode-lamps">
+        <button class="mode-lamp" id="btnShuffle" aria-pressed="false" title="Shuffle">
+          <span class="ml-glow"></span><span class="ml-text">SHUF</span>
+        </button>
+        <button class="mode-lamp" id="btnRepeat" aria-pressed="false" title="Repeat">
+          <span class="ml-glow"></span><span class="ml-text">RPT</span>
+        </button>
+        <button class="mode-lamp" id="btnGapless" aria-pressed="true" title="Gapless">
+          <span class="ml-glow"></span><span class="ml-text">GAP</span>
+        </button>
+        <button class="mode-lamp" id="btnRG" aria-pressed="false" title="ReplayGain">
+          <span class="ml-glow"></span><span class="ml-text">RG</span>
+        </button>
+      </div>
+
+      <!-- Hardware buttons (center) -->
+      <div class="hw-buttons">
+        <button class="hw-btn" id="btnPrev" title="Previous">
+          <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="19,20 9,12 19,4"/><rect x="5" y="4" width="2" height="16"/></svg>
+        </button>
+        <button class="hw-btn hw-play" id="btnPlay" title="Play / Pause">
+          <svg id="iconPlay" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"/></svg>
+          <svg id="iconPause" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+        </button>
+        <button class="hw-btn" id="btnNext" title="Next">
+          <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5,4 15,12 5,20"/><rect x="17" y="4" width="2" height="16"/></svg>
+        </button>
+        <button class="hw-btn hw-mode" id="btnView" title="Toggle view (M)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
+          <span class="hw-mode-label" id="viewLabel">VINYL</span>
+        </button>
+      </div>
+
+      <!-- Volume knob (right) -->
+      <div class="knob-area">
+        <div class="knob-ring">
+          <div class="knob" id="volKnob" tabindex="0" role="slider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="85" title="Scroll to adjust">
+            <div class="knob-grip"></div>
+            <div class="knob-indicator" id="knobIndicator"></div>
           </div>
         </div>
-      </aside>
-    </div>
-  </main>
-
-  <!-- ============ TRANSPORT ============ -->
-  <footer class="transport">
-    <div class="scrub-wrap">
-      <span class="time" id="timeCur">0:00</span>
-      <div class="bar" id="scrub">
-        <div class="fill" id="scrubFill"></div>
-        <div class="knob" id="scrubKnob"></div>
+        <div class="knob-readout">
+          <span class="knob-k">VOL</span>
+          <span class="knob-v" id="volPct">85</span>
+        </div>
       </div>
-      <span class="time right" id="timeTot">0:00</span>
-    </div>
 
-    <div class="controls">
-      <button class="mode-btn" id="btnShuffle" title="Shuffle (S)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
-      </button>
-      <button class="ctrl" id="btnPrev" title="Previous (Shift+←)">
-        <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="19,20 9,12 19,4"/><rect x="5" y="4" width="2" height="16"/></svg>
-      </button>
-      <button class="ctrl play" id="btnPlay" title="Play / Pause (Space)">
-        <svg id="iconPlay" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"/></svg>
-        <svg id="iconPause" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-      </button>
-      <button class="ctrl" id="btnNext" title="Next (Shift+→)">
-        <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5,4 15,12 5,20"/><rect x="17" y="4" width="2" height="16"/></svg>
-      </button>
-      <button class="mode-btn" id="btnRepeat" title="Repeat (R)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-      </button>
     </div>
-
-    <div class="vol-wrap">
-      <button class="mode-btn" id="btnGapless" title="Gapless playback" aria-pressed="true">
-        <span style="font-family:var(--mono);font-size:10px;letter-spacing:.15em">GAPLESS</span>
-      </button>
-      <button class="mode-btn" id="btnRG" title="ReplayGain" aria-pressed="false">
-        <span style="font-family:var(--mono);font-size:10px;letter-spacing:.15em">REPLAYGAIN</span>
-      </button>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;color:var(--ink-dim)"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-      <input id="vol" type="range" min="0" max="100" value="85" />
-      <span class="pct" id="volPct">85</span>
-    </div>
-  </footer>
+  </div>
 
 </div>
 
@@ -227,8 +282,8 @@
     <h2>The player that tells you the truth about your music</h2>
     <p>Open a folder of FLACs, WAVs, AIFFs or DSD files. Nothing leaves your machine. The browser reads files straight off your drive.</p>
     <div class="empty-cta">
-      <button class="action primary big" id="emptyOpenFolder">Open Folder</button>
-      <button class="action big" id="emptyOpenFiles">Open Files</button>
+      <button class="text-btn primary big" id="emptyOpenFolder">OPEN FOLDER</button>
+      <button class="text-btn big" id="emptyOpenFiles">OPEN FILES</button>
     </div>
     <div class="empty-formats">
       <span>FLAC</span><span>WAV</span><span>AIFF</span><span>ALAC</span>

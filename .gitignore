@@ -1,0 +1,9 @@
+# Rust build artifacts (the compiled wasm goes to wasm/, which IS tracked)
+rust/target/
+rust/Cargo.lock
+
+# Misc
+.DS_Store
+*.swp
+.vscode/
+.idea/

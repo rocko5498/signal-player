@@ -6,16 +6,17 @@
 const SUPPORTED = ['flac','wav','wave','aif','aiff','aifc','alac','m4a','mp3','ogg','opus','oga','dsf','dff','dsd','ape','wv','mp4'];
 export { SUPPORTED };
 
-export async function sniffMetadata(file, ext) {
+export async function sniffMetadata(file, ext, opts = {}) {
   const e = (ext || file.name.split('.').pop()).toLowerCase();
+  const wantArt = opts.wantArt !== false;
 
-  // Read first 1MB for headers + embedded art (FLAC PICTURE block can be large)
-  const headSize = Math.min(file.size, 1024 * 1024);
+  // Read first 256KB for bulk ingest (header + tags), 1MB if we want art
+  const headSize = Math.min(file.size, wantArt ? 1024 * 1024 : 256 * 1024);
   const buf = await file.slice(0, headSize).arrayBuffer();
   const dv = new DataView(buf);
 
   switch (e) {
-    case 'flac':           return parseFlac(dv, buf, file.size);
+    case 'flac':           return parseFlac(dv, buf, file.size, wantArt);
     case 'wav':
     case 'wave':           return parseWav(dv, file.size);
     case 'aif':
@@ -39,7 +40,7 @@ export async function sniffMetadata(file, ext) {
 
 // ============== FLAC ==============
 // Magic "fLaC", then METADATA_BLOCKs. STREAMINFO required first.
-function parseFlac(dv, buf, fileSize) {
+function parseFlac(dv, buf, fileSize, wantArt) {
   if (dv.getUint32(0, false) !== 0x664c6143) return { format: 'FLAC', error: 'no magic' };
   let p = 4;
   const blockHeader = dv.getUint32(p, false);
@@ -64,19 +65,19 @@ function parseFlac(dv, buf, fileSize) {
   const totalSamples = tsHigh * Math.pow(2,32) + (tsLow >>> 0);
   const duration = sampleRate > 0 ? totalSamples / sampleRate : null;
 
-  // Walk remaining blocks for tags + picture
-  const extras = walkFlacBlocks(dv, buf, 4);
+  // Walk remaining blocks for tags (always) + picture (only if wantArt)
+  const extras = walkFlacBlocks(dv, buf, 4, wantArt);
 
   return {
     format: 'FLAC',
     sampleRate, bitDepth, channels,
     duration: isFinite(duration) ? duration : null,
     ...extras.tags,
-    picture: extras.picture, // {mime, data:Uint8Array} or null
+    picture: extras.picture, // null if !wantArt
   };
 }
 
-function walkFlacBlocks(dv, buf, start) {
+function walkFlacBlocks(dv, buf, start, wantArt) {
   let p = start;
   const tags = {};
   let picture = null;
@@ -104,7 +105,7 @@ function walkFlacBlocks(dv, buf, start) {
           const v = s.slice(eq+1);
           assignTag(tags, k, v);
         }
-      } else if (type === 6) { // PICTURE
+      } else if (type === 6 && wantArt) { // PICTURE
         try {
           let q = p;
           const picType = dv.getUint32(q, false); q += 4;

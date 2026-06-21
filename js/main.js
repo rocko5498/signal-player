@@ -9,6 +9,7 @@ import { AudioEngine } from './engine.js';
 import { Visualizers } from './visualizers.js';
 import { VirtualList } from './virtual-list.js';
 import { computeDR, analyzeHiRes, measureSignalPath } from './analysis.js';
+import { core } from './wasm-bridge.js';
 
 // ---------- DOM ----------
 const $ = (id) => document.getElementById(id);
@@ -39,13 +40,12 @@ const els = {
 
   libCount: $('libCount'),
   libStatus: $('libStatus'),
+  ingestLed: $('ingestLed'),
   searchInput: $('searchInput'),
   libScroller: $('libScroller'),
   libSpacer: $('libSpacer'),
   libRows: $('libRows'),
 
-  statusDot: $('statusDot'),
-  statusText: $('statusText'),
   npTitle: $('npTitle'),
   npArtist: $('npArtist'),
   npAlbum: $('npAlbum'),
@@ -55,8 +55,12 @@ const els = {
   rChans: $('rChans'),
   verdicts: $('verdicts'),
 
-  meterL: $('meterL'),
-  meterR: $('meterR'),
+  needleL: $('needleL'),
+  needleR: $('needleR'),
+  vuScaleL: $('vuScaleL'),
+  vuScaleR: $('vuScaleR'),
+  peakL: $('peakL'),
+  peakR: $('peakR'),
   spectrum: $('spectrum'),
 
   btnPlay: $('btnPlay'),
@@ -68,7 +72,7 @@ const els = {
   btnRepeat: $('btnRepeat'),
   btnGapless: $('btnGapless'),
   btnRG: $('btnRG'),
-  vol: $('vol'),
+  volKnob: $('volKnob'),
   volPct: $('volPct'),
   scrub: $('scrub'),
   scrubFill: $('scrubFill'),
@@ -192,50 +196,77 @@ async function onFilesChosen(fileList) {
       hiRes: null,
     });
   }
-
   applyFilter();
+  // One render now to show track names immediately; no more during ingest.
   scheduleRender();
 
-  // Parse metadata in parallel via worker pool
-  let done = 0;
-  const total = incoming.length;
-  await Promise.all(incoming.map(async (file, i) => {
-    const trackIdx = before + i;
-    const t = state.tracks[trackIdx];
+  // --- Step 1: bulk cache lookup, one transaction for ALL keys ---
+  const keys = incoming.map(f => fileKey(f));
+  const cached = await cache.getMetaBatch(keys);
+  let cachedHits = 0;
+  for (let i = 0; i < incoming.length; i++) {
+    const m = cached.get(keys[i]);
+    if (m) {
+      state.tracks[before + i].meta = m;
+      cachedHits++;
+    }
+  }
+  if (cachedHits) {
+    els.libStatus.textContent = `${cachedHits} from cache, parsing ${incoming.length - cachedHits}…`;
+  }
 
-    // Check cache first
-    const cachedMeta = await cache.getMeta(file);
-    if (cachedMeta) {
-      t.meta = cachedMeta;
-      const cachedArt = await cache.getArt(file);
-      if (cachedArt) {
-        const url = URL.createObjectURL(cachedArt);
-        t.art = url;
-        state.artUrls.add(url);
+  // --- Step 2: parse uncached files; throttle to keep workers fed but not overloaded ---
+  // Skip art extraction entirely — too expensive in bulk. Art loads lazily.
+  let done = cachedHits;
+  const total = incoming.length;
+  const CONCURRENCY = 6;
+  const BATCH_FLUSH = 50;
+  const pendingWrites = [];
+
+  const flushWrites = async () => {
+    if (!pendingWrites.length) return;
+    const batch = pendingWrites.splice(0, pendingWrites.length);
+    await cache.setMetaBatch(batch);
+  };
+
+  const queue = [];
+  for (let i = 0; i < incoming.length; i++) {
+    if (state.tracks[before + i].meta) continue; // cached already
+    queue.push(i);
+  }
+
+  let next = 0;
+  const work = async () => {
+    while (next < queue.length) {
+      const i = queue[next++];
+      const file = incoming[i];
+      const t = state.tracks[before + i];
+      try {
+        const result = await metadataPool.parse(file, false); // no art
+        t.meta = result.meta;
+        pendingWrites.push([keys[i], result.meta]);
+      } catch (e) {
+        t.meta = { format: file.name.split('.').pop().toUpperCase() };
       }
-    } else {
-      const result = await metadataPool.parse(file);
-      t.meta = result.meta;
-      if (result.artBlob) {
-        const url = URL.createObjectURL(result.artBlob);
-        t.art = url;
-        state.artUrls.add(url);
-        await cache.setArt(file, result.artBlob);
+      done++;
+      if (pendingWrites.length >= BATCH_FLUSH) {
+        // Fire and forget; don't block the worker
+        flushWrites();
       }
-      await cache.setMeta(file, result.meta);
+      if (done % 50 === 0 || done === total) {
+        els.libStatus.textContent = `Indexed ${done} of ${total}`;
+      }
     }
-    done++;
-    if (done % 25 === 0 || done === total) {
-      els.libStatus.textContent = `Indexed ${done} of ${total}`;
-      scheduleRender();
-    }
-  }));
+  };
+  const workers = [];
+  for (let w = 0; w < CONCURRENCY; w++) workers.push(work());
+  await Promise.all(workers);
+  await flushWrites();
 
   state.ingestActive = false;
   els.libStatus.textContent = `${state.tracks.length} tracks loaded`;
   applyFilter();
   scheduleRender();
-  toast(`Added ${incoming.length} file${incoming.length>1?'s':''}`, 'ok');
 }
 
 // ---------- Library rendering ----------
@@ -257,7 +288,11 @@ function applyFilter() {
       })
       .map(({ i }) => i);
   }
-  els.libCount.textContent = `${state.tracks.length} track${state.tracks.length===1?'':'s'}`;
+  if (state.filtered.length === state.tracks.length) {
+    els.libCount.textContent = `${state.tracks.length} track${state.tracks.length===1?'':'s'}`;
+  } else {
+    els.libCount.textContent = `${state.filtered.length} of ${state.tracks.length}`;
+  }
 }
 
 let renderScheduled = false;
@@ -285,8 +320,8 @@ function renderTrackRow(el, trackIdx, listPos) {
 
   el.classList.toggle('playing', trackIdx === state.currentIdx);
 
-  // Reuse children if present, else create
-  if (!el.firstChild) {
+  // Cache children on first build so we never querySelector again
+  if (!el._refs) {
     el.innerHTML = `
       <span class="idx"></span>
       <div class="art"></div>
@@ -296,37 +331,96 @@ function renderTrackRow(el, trackIdx, listPos) {
       </div>
       <div class="badges-mini"></div>
     `;
-    el.addEventListener('click', (e) => {
-      const idx = parseInt(el.dataset.idx);
-      const realIdx = state.filtered[idx];
+    el._refs = {
+      idx: el.querySelector('.idx'),
+      art: el.querySelector('.art'),
+      title: el.querySelector('.title'),
+      sub: el.querySelector('.sub'),
+      badges: el.querySelector('.badges-mini'),
+    };
+    el.addEventListener('click', () => {
+      const i = parseInt(el.dataset.idx);
+      const realIdx = state.filtered[i];
       if (realIdx === state.currentIdx) togglePlay();
       else playIndex(realIdx);
     });
   }
-  el.querySelector('.idx').textContent = String(listPos + 1).padStart(3, '0');
-  const art = el.querySelector('.art');
-  art.style.backgroundImage = t.art ? `url(${t.art})` : '';
-  el.querySelector('.title').textContent = title;
-  const sub = [artist, album].filter(Boolean).join(' · ') || stripExt(t.name);
-  el.querySelector('.sub').textContent = sub;
+  const r = el._refs;
+  r.idx.textContent = String(listPos + 1).padStart(3, '0');
+  r.art.style.backgroundImage = t.art ? `url(${t.art})` : '';
+  // Kick off lazy art load if we don't have one yet (and haven't tried)
+  if (!t.art && !t._artTried && m.hasArt) {
+    queueArtLoad(t);
+  }
+  r.title.textContent = title;
+  let sub = '';
+  if (artist || album) {
+    sub = [artist, album].filter(Boolean).join(' · ');
+  } else if (m.format) {
+    sub = m.format;
+  }
+  r.sub.textContent = sub;
 
-  const badges = el.querySelector('.badges-mini');
   let html = `<span class="pill">${fmt}</span>`;
   if (sr || bd) html += `<span class="pill">${[sr,bd].filter(Boolean).join(' · ')}</span>`;
   if (t.hiRes) {
     if (t.hiRes.verdict === 'fake') html += `<span class="pill fake">UPSAMPLED</span>`;
-    else if (t.hiRes.verdict === 'true') html += `<span class="pill hires">HI-RES ✓</span>`;
+    else if (t.hiRes.verdict === 'true') html += `<span class="pill hires">HI-RES</span>`;
   }
   if (t.drValue != null) {
     const cls = t.drValue >= 14 ? 'drhi' : t.drValue >= 8 ? 'drmid' : 'drlow';
     html += `<span class="pill ${cls}">DR${t.drValue}</span>`;
   }
-  badges.innerHTML = html;
+  r.badges.innerHTML = html;
 }
 
+// ---------- Lazy art queue ----------
+// Only loads art for tracks the user actually sees / plays.
+const artQueue = [];
+let artWorkerRunning = false;
+function queueArtLoad(t) {
+  if (t._artTried || t._artQueued) return;
+  t._artQueued = true;
+  artQueue.push(t);
+  if (!artWorkerRunning) runArtWorker();
+}
+async function runArtWorker() {
+  artWorkerRunning = true;
+  while (artQueue.length) {
+    const t = artQueue.shift();
+    if (t.art || t._artTried) continue;
+    t._artTried = true;
+    try {
+      // Cache hit first
+      const cachedArt = await cache.getArt(t.file);
+      if (cachedArt) {
+        const url = URL.createObjectURL(cachedArt);
+        t.art = url;
+        state.artUrls.add(url);
+        scheduleRender();
+        continue;
+      }
+      // Otherwise extract via worker (with art this time)
+      const result = await metadataPool.parse(t.file, true);
+      if (result.artBlob) {
+        const url = URL.createObjectURL(result.artBlob);
+        t.art = url;
+        state.artUrls.add(url);
+        cache.setArt(t.file, result.artBlob); // fire-and-forget
+        scheduleRender();
+      }
+    } catch {}
+  }
+  artWorkerRunning = false;
+}
+
+let searchDebounceId = null;
 els.searchInput.addEventListener('input', () => {
-  applyFilter();
-  scheduleRender();
+  if (searchDebounceId) clearTimeout(searchDebounceId);
+  searchDebounceId = setTimeout(() => {
+    applyFilter();
+    scheduleRender();
+  }, 120);
 });
 
 function stripExt(name) { return name.replace(/\.[^.]+$/, ''); }
@@ -341,12 +435,29 @@ async function playIndex(idx) {
   const t = state.tracks[idx];
   if (!t) return;
 
-  // Wait for metadata if needed
+  // If metadata hasn't been parsed yet, do it now (priority parse).
+  // Playback doesn't depend on metadata, but we want the readouts populated.
   if (!t.meta) {
-    toast('Metadata still loading, try again in a moment', 'warn');
-    return;
+    try {
+      const result = await metadataPool.parse(t.file);
+      t.meta = result.meta;
+      if (result.artBlob) {
+        const url = URL.createObjectURL(result.artBlob);
+        t.art = url;
+        state.artUrls.add(url);
+        await cache.setArt(t.file, result.artBlob);
+      }
+      await cache.setMeta(t.file, result.meta);
+    } catch (e) {
+      // Even if metadata fails, we can still try to play.
+      t.meta = { format: t.ext.toUpperCase() };
+    }
   }
 
+  // Priority art load for the playing track
+  if (!t.art && !t._artTried) {
+    queueArtLoad(t);
+  }
   els.libStatus.textContent = `Decoding ${t.name}…`;
   setStatus('decoding', 'DECODING');
 
@@ -357,8 +468,12 @@ async function playIndex(idx) {
     // Build visualizers + measurement hook on first context
     if (!visualizers) {
       visualizers = new Visualizers({
-        meterL: els.meterL,
-        meterR: els.meterR,
+        needleL: els.needleL,
+        needleR: els.needleR,
+        peakL: els.peakL,
+        peakR: els.peakR,
+        scaleL: els.vuScaleL,
+        scaleR: els.vuScaleR,
         spectrum: els.spectrum,
         engine,
       });
@@ -393,6 +508,7 @@ async function playIndex(idx) {
     toast(`Playback failed: ${e.message}`, 'warn');
     setStatus('error', 'ERROR');
     updatePlayButton(false);
+    els.libStatus.textContent = `${state.tracks.length} tracks loaded`;
   }
 }
 
@@ -522,8 +638,11 @@ function updatePlayButton(playing) {
   els.app.dataset.playing = String(playing);
 }
 function setStatus(kind, label) {
-  els.statusDot.classList.toggle('idle', kind !== 'playing');
-  els.statusText.textContent = label;
+  // McIntosh: just toggle the ingest LED for visual feedback.
+  // Label is informational only — shown in libStatus if mid-ingest.
+  if (els.ingestLed) {
+    els.ingestLed.classList.toggle('idle', kind !== 'playing' && kind !== 'decoding');
+  }
 }
 function fmtTime(s) {
   if (!isFinite(s)) return '0:00';
@@ -544,6 +663,7 @@ els.btnShuffle.addEventListener('click', () => {
 });
 els.btnRepeat.addEventListener('click', () => {
   state.repeat = state.repeat === 'off' ? 'all' : state.repeat === 'all' ? 'one' : 'off';
+  els.btnRepeat.setAttribute('aria-pressed', state.repeat !== 'off');
   els.btnRepeat.classList.toggle('on', state.repeat !== 'off');
   els.btnRepeat.title = `Repeat: ${state.repeat}`;
 });
@@ -568,36 +688,49 @@ els.scrub.addEventListener('click', (e) => {
   engine.seek(pct * dur);
 });
 
-els.vol.addEventListener('input', () => {
-  const v = els.vol.value / 100;
-  engine.setVolume(v);
-  els.volPct.textContent = els.vol.value;
+// ---------- Volume knob (scroll wheel on hover) ----------
+let knobValue = 85;
+function applyKnob(v) {
+  knobValue = Math.max(0, Math.min(100, Math.round(v)));
+  engine.setVolume(knobValue / 100);
+  els.volPct.textContent = knobValue;
+  els.volKnob.setAttribute('aria-valuenow', knobValue);
+  // Map 0..100 → -135deg..+135deg
+  const angle = -135 + (knobValue / 100) * 270;
+  els.volKnob.style.transform = `rotate(${angle}deg)`;
+}
+els.volKnob.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  // 1 step per wheel notch; shift for finer
+  const step = e.shiftKey ? 1 : 3;
+  const dir = e.deltaY > 0 ? -1 : 1;
+  applyKnob(knobValue + step * dir);
+}, { passive: false });
+els.volKnob.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowUp' || e.key === 'ArrowRight') { e.preventDefault(); applyKnob(knobValue + 2); }
+  else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') { e.preventDefault(); applyKnob(knobValue - 2); }
 });
+// Initial rotation
+applyKnob(knobValue);
 
 // ---------- Now-playing UI ----------
 function updateNowPlaying(t, buffer) {
   const m = t.meta || {};
   const title = m.title || stripExt(t.name);
-  const artist = m.artist || '—';
+  const artist = m.artist || '';
   const album = m.album || '';
 
-  els.npTitle.textContent = title;
-  els.npArtist.textContent = artist;
-  els.npAlbum.textContent = album;
+  els.npTitle.textContent = title.toUpperCase();
+  els.npArtist.textContent = artist || '—';
+  els.npAlbum.textContent = album.toUpperCase();
 
   els.rFormat.textContent = (m.format || t.ext).toUpperCase();
-  els.rFormat.classList.remove('dim');
-  els.rRate.textContent = m.sampleRate ? formatSR(m.sampleRate) : (buffer ? formatSR(buffer.sampleRate) : '—');
-  els.rRate.classList.toggle('dim', !m.sampleRate && !buffer);
-  els.rBits.textContent = m.bitDepth ? `${m.bitDepth}-bit` : (m.isDsd ? '1-bit DSD' : '—');
-  els.rBits.classList.toggle('dim', !m.bitDepth && !m.isDsd);
-  els.rChans.textContent = (m.channels || (buffer ? buffer.numberOfChannels : null)) ? `${m.channels || buffer.numberOfChannels} ch` : '—';
-  els.rChans.classList.toggle('dim', !m.channels && !buffer);
+  els.rRate.textContent = m.sampleRate ? formatSRShort(m.sampleRate) : (buffer ? formatSRShort(buffer.sampleRate) : '—');
+  els.rBits.textContent = m.bitDepth ? `${m.bitDepth}` : (m.isDsd ? '1' : '—');
+  els.rChans.textContent = (m.channels || (buffer ? buffer.numberOfChannels : null)) || '—';
 
-  // Verdicts panel
   renderVerdicts(t);
 
-  // Vinyl view
   els.vinylTitle.textContent = title;
   els.vinylArtist.textContent = artist;
   if (t.art) {
@@ -609,7 +742,6 @@ function updateNowPlaying(t, buffer) {
     els.sleeveFront.style.backgroundImage = '';
     els.recordLabel.classList.add('no-art');
   }
-  // Liner notes
   els.linerTitle.textContent = title;
   els.linerArtist.textContent = artist;
   els.linerAlbum.textContent = album || '—';
@@ -619,7 +751,13 @@ function updateNowPlaying(t, buffer) {
   els.linerBits.textContent = m.bitDepth ? `${m.bitDepth}-bit` : (m.isDsd ? '1-bit DSD' : '—');
   els.linerChans.textContent = m.channels ? `${m.channels}` : '—';
   els.linerEncoder.textContent = m.encoder || m.encodedBy || '—';
-  els.linerRG.textContent = (m.rgTrackGain != null) ? `${m.rgTrackGain.toFixed(2)} dB (track)` : '—';
+  els.linerRG.textContent = (m.rgTrackGain != null) ? `${m.rgTrackGain.toFixed(2)} dB` : '—';
+}
+
+function formatSRShort(hz) {
+  if (!hz) return '—';
+  if (hz >= 1000) return (hz/1000).toFixed(hz % 1000 === 0 ? 0 : 1) + 'k';
+  return String(hz);
 }
 
 function renderVerdicts(t) {
@@ -640,10 +778,12 @@ function updateSignalChain(t) {
   const fileRate = m.sampleRate;
   const engineRate = engine.ctx ? engine.ctx.sampleRate : null;
 
-  els.chainFile.textContent = fileRate ? formatSR(fileRate) : '—';
-  els.chainEngine.textContent = engineRate ? formatSR(engineRate) : '—';
-  els.chainOutput.textContent = engineRate ? formatSR(engineRate) + '*' : '—';
-  els.chainOutput.title = 'OS output rate cannot be read from browser — assumed equal to engine. If different, OS resamples after our chain.';
+  els.chainFile.textContent = fileRate ? formatSR(fileRate) : '— — —';
+  els.chainEngine.textContent = engineRate ? formatSR(engineRate) : '— — —';
+  els.chainOutput.textContent = engineRate ? formatSR(engineRate) : '— — —';
+  els.chainOutput.dataset.stage = 'output';
+  els.chainEngine.dataset.stage = 'engine';
+  els.chainFile.dataset.stage = 'file';
 
   els.signalChain.classList.remove('match-ok', 'match-warn', 'match-bad');
   els.signalChain.removeAttribute('data-mismatch');
@@ -656,7 +796,6 @@ function updateSignalChain(t) {
     }
   }
 
-  // Update liner DR/hi-res
   els.linerDR.textContent = t.drValue != null ? `DR${t.drValue}` : 'computing…';
   els.linerHiRes.textContent = t.hiRes ? t.hiRes.label : 'computing…';
 }
@@ -665,12 +804,20 @@ function updateSignalChain(t) {
 async function runAnalyses(t, buffer) {
   // Skip if already cached on track
   if (t.drValue == null) {
-    // Run in idle/next microtask to not block UI
     setTimeout(() => {
       try {
-        const channels = [];
-        for (let i = 0; i < buffer.numberOfChannels; i++) channels.push(buffer.getChannelData(i));
-        const dr = computeDR(channels, buffer.sampleRate);
+        // Build interleaved Float32Array for WASM, or de-interleave channels for JS
+        let dr = null;
+        if (core.available) {
+          const interleaved = interleaveBuffer(buffer);
+          dr = core.computeDR(interleaved, buffer.sampleRate, buffer.numberOfChannels);
+        }
+        if (dr == null) {
+          // JS fallback
+          const channels = [];
+          for (let i = 0; i < buffer.numberOfChannels; i++) channels.push(buffer.getChannelData(i));
+          dr = computeDR(channels, buffer.sampleRate);
+        }
         t.drValue = dr;
         if (t === state.tracks[state.currentIdx]) {
           renderVerdicts(t);
@@ -687,9 +834,22 @@ async function runAnalyses(t, buffer) {
   if (t.hiRes == null) {
     setTimeout(() => {
       try {
-        const channels = [];
-        for (let i = 0; i < buffer.numberOfChannels; i++) channels.push(buffer.getChannelData(i));
-        const v = analyzeHiRes(channels, buffer.sampleRate, t.meta?.bitDepth || 16, t.meta?.sampleRate || buffer.sampleRate);
+        let v = null;
+        if (core.available) {
+          const interleaved = interleaveBuffer(buffer);
+          v = core.analyzeHiRes(
+            interleaved,
+            buffer.sampleRate,
+            buffer.numberOfChannels,
+            t.meta?.sampleRate || buffer.sampleRate,
+            t.meta?.bitDepth || 16,
+          );
+        }
+        if (v == null) {
+          const channels = [];
+          for (let i = 0; i < buffer.numberOfChannels; i++) channels.push(buffer.getChannelData(i));
+          v = analyzeHiRes(channels, buffer.sampleRate, t.meta?.bitDepth || 16, t.meta?.sampleRate || buffer.sampleRate);
+        }
         t.hiRes = v;
         if (t === state.tracks[state.currentIdx]) {
           renderVerdicts(t);
@@ -703,6 +863,25 @@ async function runAnalyses(t, buffer) {
       } catch (e) { console.warn('hi-res failed', e); }
     }, 150);
   }
+}
+
+// Build an interleaved Float32Array from an AudioBuffer.
+// Allocated fresh each call — buffer is large but only used briefly.
+function interleaveBuffer(buffer) {
+  const ch = buffer.numberOfChannels;
+  const len = buffer.length;
+  const out = new Float32Array(ch * len);
+  if (ch === 1) {
+    out.set(buffer.getChannelData(0));
+    return out;
+  }
+  const c0 = buffer.getChannelData(0);
+  const c1 = buffer.getChannelData(1);
+  for (let i = 0; i < len; i++) {
+    out[i * 2]     = c0[i];
+    out[i * 2 + 1] = c1[i];
+  }
+  return out;
 }
 
 // ---------- Measured-clean badge ----------
@@ -720,11 +899,11 @@ els.badgeMeasured.addEventListener('click', async () => {
     if (r.clean) {
       els.badgeMeasured.classList.add('measured');
       els.badgeMeasured.classList.remove('failed');
-      els.badgeMeasuredLabel.textContent = `CLEAN · ${r.thdnDb.toFixed(0)} dB`;
+      els.badgeMeasuredLabel.textContent = 'CLEAN';
     } else {
       els.badgeMeasured.classList.remove('measured');
       els.badgeMeasured.classList.add('failed');
-      els.badgeMeasuredLabel.textContent = `THD+N ${r.thdnDb.toFixed(0)} dB`;
+      els.badgeMeasuredLabel.textContent = 'NOISY';
     }
     toast(`Signal path measured: THD+N ${r.thdnDb.toFixed(1)} dB`, r.clean ? 'ok' : 'warn');
   } catch (e) {
@@ -797,12 +976,19 @@ function init() {
   });
   virtualList.setItems([]);
 
-  // Show empty state until library has content
+  // Wait for WASM probe (non-blocking — just logs status)
+  core.ready.then(() => {
+    if (core.available) {
+      console.info('[signal] Rust core active');
+    } else {
+      console.info('[signal] Rust core unavailable, JS-only mode');
+    }
+  });
+
   if (!state.tracks.length) {
     els.emptyScreen.hidden = false;
   }
 
-  // PWA registration
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
   }

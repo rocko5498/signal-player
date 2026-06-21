@@ -61,6 +61,42 @@ export const cache = {
   async setMeta(file, meta) {
     try { await txPut(STORE_META, fileKey(file), meta); } catch {}
   },
+  // Batch insert: one transaction for many entries. Used during ingest.
+  async setMetaBatch(entries) {
+    if (!entries.length) return;
+    try {
+      const db = await open();
+      await new Promise((resolve, reject) => {
+        const t = db.transaction(STORE_META, 'readwrite');
+        const s = t.objectStore(STORE_META);
+        for (const [key, value] of entries) s.put(value, key);
+        t.oncomplete = () => resolve();
+        t.onerror = () => reject(t.error);
+      });
+    } catch {}
+  },
+  async getMetaBatch(keys) {
+    if (!keys.length) return new Map();
+    try {
+      const db = await open();
+      return await new Promise((resolve, reject) => {
+        const t = db.transaction(STORE_META, 'readonly');
+        const s = t.objectStore(STORE_META);
+        const out = new Map();
+        let remaining = keys.length;
+        for (const k of keys) {
+          const r = s.get(k);
+          r.onsuccess = () => {
+            if (r.result) out.set(k, r.result);
+            if (--remaining === 0) resolve(out);
+          };
+          r.onerror = () => {
+            if (--remaining === 0) resolve(out);
+          };
+        }
+      });
+    } catch { return new Map(); }
+  },
   async getArt(file) {
     try { return await txGet(STORE_ART, fileKey(file)); } catch { return null; }
   },

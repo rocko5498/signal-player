@@ -1,7 +1,7 @@
 // SIGNAL service worker — caches the app shell so the player works offline.
 // User audio files are NEVER cached; they're read fresh from the local drive each time.
 
-const CACHE = 'signal-shell-v2';
+const CACHE = 'signal-shell-v4';
 const SHELL = [
   './',
   './index.html',
@@ -16,6 +16,7 @@ const SHELL = [
   './js/virtual-list.js',
   './js/visualizers.js',
   './js/analysis.js',
+  './js/wasm-bridge.js',
 ];
 
 self.addEventListener('install', (e) => {

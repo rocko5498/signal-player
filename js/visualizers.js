@@ -1,76 +1,131 @@
 // ============================================================
-// visualizers.js — meters + spectrum, drawn cheaply.
+// visualizers.js — VU needle meters (SVG) + spectrum (canvas).
 //
-// Optimizations vs first version:
-//   - Cache canvas size; only re-measure on resize event
-//   - Pre-allocated buffers
-//   - Single fillRect call per channel meter row
-//   - Spectrum: gradient cached once, reused every frame
-//   - Pause RAF when document is hidden
+// VU ballistics:
+//   - Time domain RMS converted to dB
+//   - Needle position lags with first-order smoothing (~300ms rise / ~1s fall)
+//   - Peak lamp lights above 0 dB and stays on for 1.5s
 // ============================================================
 
-const COLOR_GREEN = '#58c27d';
-const COLOR_AMBER = '#ffb454';
-const COLOR_RED = '#ff5a3c';
-
 export class Visualizers {
-  constructor({ meterL, meterR, spectrum, engine }) {
-    this.meterL = meterL;
-    this.meterR = meterR;
+  constructor({ needleL, needleR, peakL, peakR, scaleL, scaleR, spectrum, engine }) {
+    this.needleL = needleL;
+    this.needleR = needleR;
+    this.peakL = peakL;
+    this.peakR = peakR;
     this.spectrum = spectrum;
     this.engine = engine;
-
-    this.gL = meterL.getContext('2d', { alpha: false });
-    this.gR = meterR.getContext('2d', { alpha: false });
     this.gS = spectrum.getContext('2d', { alpha: false });
     this.spectrumGradient = null;
 
     this.bufL = null;
     this.bufR = null;
     this.fftBuf = null;
-
-    this.sizesL = null;
-    this.sizesR = null;
     this.sizesS = null;
 
-    this.peakHold = { L: -80, R: -80, ttlL: 0, ttlR: 0 };
+    this.angleL = -50;
+    this.angleR = -50;
+    this.peakTtlL = 0;
+    this.peakTtlR = 0;
 
     this.running = false;
     this.rafId = null;
+    this.lastT = 0;
 
-    this._onResize = this._onResize.bind(this);
-    window.addEventListener('resize', this._onResize, { passive: true });
+    // Draw scale lines into the VU faces (once)
+    this._drawScale(scaleL);
+    this._drawScale(scaleR);
+
+    window.addEventListener('resize', () => { this.sizesS = null; this.spectrumGradient = null; }, { passive: true });
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) this.pause();
       else this.start();
     });
   }
 
-  _onResize() {
-    this.sizesL = this.sizesR = this.sizesS = null;
-    this.spectrumGradient = null;
-  }
+  _drawScale(group) {
+    if (!group) return;
+    // Arc from -50deg to +50deg, centered at (100, 105), radius ~85
+    const cx = 100, cy = 105, r = 85;
+    const ns = 'http://www.w3.org/2000/svg';
+    const ticks = [
+      { db: -20, label: '-20' },
+      { db: -10, label: '-10' },
+      { db: -5,  label: '-5'  },
+      { db: -3,  label: '-3'  },
+      { db: 0,   label: '0'   },
+      { db: 3,   label: '+3'  },
+    ];
+    // Major arc
+    const arcStart = polar(cx, cy, r, -50);
+    const arcEnd   = polar(cx, cy, r, 50);
+    const arc = document.createElementNS(ns, 'path');
+    arc.setAttribute('d', `M ${arcStart.x} ${arcStart.y} A ${r} ${r} 0 0 1 ${arcEnd.x} ${arcEnd.y}`);
+    arc.setAttribute('fill', 'none');
+    arc.setAttribute('stroke', '#3a2a14');
+    arc.setAttribute('stroke-width', '1');
+    group.appendChild(arc);
 
-  _ensureSize(canvas, sizes) {
-    const dpr = window.devicePixelRatio || 1;
-    const w = canvas.clientWidth, h = canvas.clientHeight;
-    if (!sizes || sizes.w !== w || sizes.h !== h || sizes.dpr !== dpr) {
-      canvas.width = Math.max(1, Math.floor(w * dpr));
-      canvas.height = Math.max(1, Math.floor(h * dpr));
-      const g = canvas.getContext('2d', { alpha: false });
-      g.setTransform(dpr, 0, 0, dpr, 0, 0);
-      return { w, h, dpr };
+    // Red arc from 0 dB onward
+    const redStart = polar(cx, cy, r, dbToAngle(0));
+    const red = document.createElementNS(ns, 'path');
+    red.setAttribute('d', `M ${redStart.x} ${redStart.y} A ${r} ${r} 0 0 1 ${arcEnd.x} ${arcEnd.y}`);
+    red.setAttribute('fill', 'none');
+    red.setAttribute('stroke', '#ff5a3c');
+    red.setAttribute('stroke-width', '1.5');
+    red.setAttribute('opacity', '0.7');
+    group.appendChild(red);
+
+    for (const t of ticks) {
+      const a = dbToAngle(t.db);
+      const inner = polar(cx, cy, r - 5, a);
+      const outer = polar(cx, cy, r + 4, a);
+      const line = document.createElementNS(ns, 'line');
+      line.setAttribute('x1', inner.x);
+      line.setAttribute('y1', inner.y);
+      line.setAttribute('x2', outer.x);
+      line.setAttribute('y2', outer.y);
+      line.setAttribute('stroke', t.db >= 0 ? '#ff5a3c' : '#8c5e2a');
+      line.setAttribute('stroke-width', t.db === 0 ? '1.8' : '1');
+      group.appendChild(line);
+
+      const text = document.createElementNS(ns, 'text');
+      const labelPos = polar(cx, cy, r - 14, a);
+      text.setAttribute('x', labelPos.x);
+      text.setAttribute('y', labelPos.y);
+      text.setAttribute('fill', t.db >= 0 ? '#ff5a3c' : '#8c5e2a');
+      text.setAttribute('font-family', 'JetBrains Mono, monospace');
+      text.setAttribute('font-size', '8');
+      text.setAttribute('text-anchor', 'middle');
+      text.setAttribute('dominant-baseline', 'middle');
+      text.textContent = t.label;
+      group.appendChild(text);
     }
-    return sizes;
+
+    // "VU" engraved label
+    const vuText = document.createElementNS(ns, 'text');
+    vuText.setAttribute('x', cx);
+    vuText.setAttribute('y', cy - 50);
+    vuText.setAttribute('fill', '#5a4422');
+    vuText.setAttribute('font-family', 'JetBrains Mono, monospace');
+    vuText.setAttribute('font-weight', '700');
+    vuText.setAttribute('font-size', '7');
+    vuText.setAttribute('letter-spacing', '2');
+    vuText.setAttribute('text-anchor', 'middle');
+    vuText.textContent = 'VU';
+    group.appendChild(vuText);
   }
 
   start() {
     if (this.running) return;
     this.running = true;
-    const tick = () => {
+    this.lastT = performance.now();
+    const tick = (t) => {
       if (!this.running) return;
       this.rafId = requestAnimationFrame(tick);
-      this._draw();
+      const dt = Math.min(64, t - this.lastT);
+      this.lastT = t;
+      this._draw(dt);
     };
     this.rafId = requestAnimationFrame(tick);
   }
@@ -80,14 +135,15 @@ export class Visualizers {
     this.rafId = null;
   }
 
-  _draw() {
+  _draw(dt) {
     const e = this.engine;
     if (!e.analyser || !e.analyserL || !e.analyserR) {
-      this._drawEmpty();
+      this._drawSpectrumEmpty();
+      this._setNeedle(this.needleL, -50);
+      this._setNeedle(this.needleR, -50);
       return;
     }
 
-    // Lazy buf alloc / size match
     if (!this.bufL || this.bufL.length !== e.analyserL.fftSize) {
       this.bufL = new Float32Array(e.analyserL.fftSize);
       this.bufR = new Float32Array(e.analyserR.fftSize);
@@ -100,33 +156,14 @@ export class Visualizers {
     e.analyserR.getFloatTimeDomainData(this.bufR);
     e.analyser.getByteFrequencyData(this.fftBuf);
 
-    this.sizesL = this._ensureSize(this.meterL, this.sizesL);
-    this.sizesR = this._ensureSize(this.meterR, this.sizesR);
-    this.sizesS = this._ensureSize(this.spectrum, this.sizesS);
+    this._updateNeedle('L', this.bufL, dt);
+    this._updateNeedle('R', this.bufR, dt);
 
-    this._drawMeter(this.gL, this.sizesL, this.bufL, 'L');
-    this._drawMeter(this.gR, this.sizesR, this.bufR, 'R');
-    this._drawSpectrum(this.gS, this.sizesS, this.fftBuf, e.ctx ? e.ctx.sampleRate : 48000);
+    this.sizesS = ensureCanvasSize(this.spectrum, this.sizesS);
+    this._drawSpectrum(this.sizesS, this.fftBuf, e.ctx ? e.ctx.sampleRate : 48000);
   }
 
-  _drawEmpty() {
-    this.sizesL = this._ensureSize(this.meterL, this.sizesL);
-    this.sizesR = this._ensureSize(this.meterR, this.sizesR);
-    this.sizesS = this._ensureSize(this.spectrum, this.sizesS);
-    this.gL.fillStyle = '#050505';
-    this.gR.fillStyle = '#050505';
-    this.gS.fillStyle = '#050505';
-    this.gL.fillRect(0, 0, this.sizesL.w, this.sizesL.h);
-    this.gR.fillRect(0, 0, this.sizesR.w, this.sizesR.h);
-    this.gS.fillRect(0, 0, this.sizesS.w, this.sizesS.h);
-  }
-
-  _drawMeter(g, size, buf, ch) {
-    const { w, h } = size;
-    g.fillStyle = '#050505';
-    g.fillRect(0, 0, w, h);
-
-    // RMS + peak
+  _updateNeedle(ch, buf, dt) {
     let sumSq = 0, peak = 0;
     for (let i = 0; i < buf.length; i++) {
       const a = buf[i];
@@ -136,63 +173,49 @@ export class Visualizers {
     }
     const rms = Math.sqrt(sumSq / buf.length);
     const rmsDb = toDb(rms);
+    const targetAngle = dbToAngle(rmsDb);
+
+    const curKey = ch === 'L' ? 'angleL' : 'angleR';
+    const cur = this[curKey];
+    // VU ballistics: 300ms rise, 1000ms fall (first-order)
+    const rising = targetAngle > cur;
+    const tau = rising ? 300 : 1000;
+    const alpha = 1 - Math.exp(-dt / tau);
+    const next = cur + (targetAngle - cur) * alpha;
+    this[curKey] = next;
+
+    const needle = ch === 'L' ? this.needleL : this.needleR;
+    this._setNeedle(needle, next);
+
+    // peak lamp
     const peakDb = toDb(peak);
-
-    const dbToX = (db) => {
-      const min = -60, max = 3;
-      const t = (Math.max(min, Math.min(max, db)) - min) / (max - min);
-      return Math.pow(t, 0.85) * w;
-    };
-
-    const xRms = dbToX(rmsDb);
-
-    // Single-pass segmented bar — fewer fillRect calls
-    const segW = 3, segGap = 1;
-    let xGreenEnd = Math.min(xRms, w * 0.62);
-    let xAmberEnd = Math.min(xRms, w * 0.82);
-    let xRedEnd = xRms;
-
-    g.fillStyle = COLOR_GREEN;
-    for (let x = 0; x < xGreenEnd; x += segW + segGap) g.fillRect(x, 4, segW, h - 8);
-    g.fillStyle = COLOR_AMBER;
-    for (let x = xGreenEnd; x < xAmberEnd; x += segW + segGap) g.fillRect(x, 4, segW, h - 8);
-    g.fillStyle = COLOR_RED;
-    for (let x = xAmberEnd; x < xRedEnd; x += segW + segGap) g.fillRect(x, 4, segW, h - 8);
-
-    // Peak hold
-    const key = ch;
-    if (peakDb > this.peakHold[key]) {
-      this.peakHold[key] = peakDb;
-      this.peakHold['ttl' + key] = 45;
+    const lamp = ch === 'L' ? this.peakL : this.peakR;
+    if (peakDb >= 0) {
+      lamp.classList.add('on');
+      if (ch === 'L') this.peakTtlL = 1500; else this.peakTtlR = 1500;
     } else {
-      this.peakHold['ttl' + key]--;
-      if (this.peakHold['ttl' + key] < 0) this.peakHold[key] -= 0.5;
-    }
-    if (this.peakHold[key] > -60) {
-      const xp = dbToX(this.peakHold[key]);
-      g.fillStyle = this.peakHold[key] >= 0 ? COLOR_RED : COLOR_AMBER;
-      g.fillRect(xp - 2, 2, 2, h - 4);
-    }
-
-    // Tick marks
-    g.fillStyle = '#262624';
-    const ticks = [-60,-40,-20,-12,-6,0,3];
-    for (const t of ticks) {
-      const x = dbToX(t);
-      g.fillRect(x, h - 2, 1, 2);
+      const ttlKey = ch === 'L' ? 'peakTtlL' : 'peakTtlR';
+      this[ttlKey] -= dt;
+      if (this[ttlKey] <= 0) lamp.classList.remove('on');
     }
   }
 
-  _drawSpectrum(g, size, fft, sampleRate) {
+  _setNeedle(el, angle) {
+    if (!el) return;
+    el.setAttribute('transform', `rotate(${angle} 100 105)`);
+  }
+
+  _drawSpectrum(size, fft, sampleRate) {
+    const g = this.gS;
     const { w, h } = size;
-    g.fillStyle = '#050505';
+    g.fillStyle = '#050605';
     g.fillRect(0, 0, w, h);
 
     if (!this.spectrumGradient) {
       const grad = g.createLinearGradient(0, h, 0, 0);
       grad.addColorStop(0, '#3a2a14');
-      grad.addColorStop(0.6, '#ffb454');
-      grad.addColorStop(1, '#fff0d4');
+      grad.addColorStop(0.55, '#ffb454');
+      grad.addColorStop(1, '#ffd278');
       this.spectrumGradient = grad;
     }
 
@@ -200,11 +223,11 @@ export class Visualizers {
     const fftBins = fft.length;
     const minF = 20, maxF = Math.min(20000, nyquist);
     const logMin = Math.log10(minF), logMax = Math.log10(maxF);
-    const cols = Math.max(64, Math.floor(w / 4));
+    const cols = Math.max(60, Math.floor(w / 5));
     const colW = w / cols;
 
     // Gridlines
-    g.strokeStyle = '#121211';
+    g.strokeStyle = '#0e0e0e';
     g.lineWidth = 1;
     g.beginPath();
     for (const f of [100, 1000, 10000]) {
@@ -225,15 +248,49 @@ export class Visualizers {
       for (let b = b0; b < b1 && b < fftBins; b++) { sum += fft[b]; n++; }
       const v = n ? sum / n : 0;
       const amp = v / 255;
-      const barH = Math.pow(amp, 0.8) * (h - 6);
+      const barH = Math.pow(amp, 0.85) * (h - 8);
       const x = c * colW;
       g.rect(x + 0.5, h - barH, colW - 1, barH);
     }
     g.fill();
   }
+
+  _drawSpectrumEmpty() {
+    this.sizesS = ensureCanvasSize(this.spectrum, this.sizesS);
+    const g = this.gS;
+    g.fillStyle = '#050605';
+    g.fillRect(0, 0, this.sizesS.w, this.sizesS.h);
+  }
 }
 
+// ---- math helpers ----
+function dbToAngle(db) {
+  // -60 dB → -50deg ; +3 dB → +50deg ; log-ish but mostly linear with knee at -20
+  // Standard VU: 0 VU is at 70-80% of scale.
+  const clamped = Math.max(-60, Math.min(6, db));
+  // Map linearly from [-60, +6] to [-50, +50] but bias so 0 dB is near the right side
+  // Use piecewise: -60..-20 → -50..-20deg, -20..0 → -20..+30deg, 0..6 → +30..+50deg
+  if (clamped <= -20) return -50 + ((clamped + 60) / 40) * 30;
+  if (clamped <= 0)   return -20 + ((clamped + 20) / 20) * 50;
+  return 30 + ((clamped) / 6) * 20;
+}
+function polar(cx, cy, r, angleDeg) {
+  const a = (angleDeg - 90) * Math.PI / 180;
+  return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+}
 function toDb(linear) {
   if (linear <= 0.00001) return -80;
   return Math.max(-80, 20 * Math.log10(linear));
+}
+function ensureCanvasSize(canvas, prev) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (!prev || prev.w !== w || prev.h !== h || prev.dpr !== dpr) {
+    canvas.width = Math.max(1, Math.floor(w * dpr));
+    canvas.height = Math.max(1, Math.floor(h * dpr));
+    const g = canvas.getContext('2d', { alpha: false });
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { w, h, dpr };
+  }
+  return prev;
 }
