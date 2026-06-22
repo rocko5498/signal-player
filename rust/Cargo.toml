@@ -1,6 +1,6 @@
 [package]
 name = "signal_core"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "SIGNAL — Rust core: metadata parsing, DR meter, hi-res analysis, DSD decoder"
 license = "MIT OR Apache-2.0"
@@ -27,4 +27,4 @@ strip = true
 opt-level = 3
 
 [package.metadata.wasm-pack.profile.release]
-wasm-opt = ["-O3", "--enable-bulk-memory"]
+wasm-opt = false

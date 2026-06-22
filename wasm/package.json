@@ -2,7 +2,7 @@
   "name": "signal_core",
   "type": "module",
   "description": "SIGNAL — Rust core: metadata parsing, DR meter, hi-res analysis, DSD decoder",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "MIT OR Apache-2.0",
   "files": [
     "signal_core_bg.wasm",

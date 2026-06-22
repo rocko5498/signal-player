@@ -115,11 +115,42 @@ export class AudioEngine {
   }
 
   // Decode a file to AudioBuffer at our context rate.
-  // Note: decodeAudioData may resample if source rate != ctx rate; that's
-  // why we try to match rates upstream via ensure(sampleRate).
+  // - For PCM formats (FLAC/WAV/MP3/etc.): browser's decodeAudioData (native, fast).
+  // - For DSD (DSF/DFF): route through Rust core which decodes 1-bit DSD,
+  //   low-pass filters, and decimates to PCM at the context rate. Returns
+  //   raw f32 samples we wrap in an AudioBuffer.
+  // - DSD playback gracefully fails if Rust core isn't loaded.
   async decode(file) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (ext === 'dsf' || ext === 'dff' || ext === 'dsd') {
+      return await this._decodeDsd(file);
+    }
     const ab = await file.arrayBuffer();
     return await this.ctx.decodeAudioData(ab.slice(0));
+  }
+
+  async _decodeDsd(file) {
+    // Lazy-import the bridge so engine.js doesn't hard-depend on it
+    const { core } = await import('./wasm-bridge.js');
+    await core.ready;
+    if (!core.available || !core.decodeDsdToPcm) {
+      throw new Error('DSD decoding requires the Rust core. Rebuild WASM (wasm-pack build).');
+    }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const targetRate = this.ctx.sampleRate;
+    const samples = core.decodeDsdToPcm(bytes, targetRate);
+    if (!samples || samples.length === 0) {
+      throw new Error('DSD decode returned no samples — bad or unsupported file?');
+    }
+    // samples are interleaved stereo f32. Wrap in AudioBuffer.
+    const channels = 2;
+    const frames = Math.floor(samples.length / channels);
+    const buffer = this.ctx.createBuffer(channels, frames, targetRate);
+    for (let ch = 0; ch < channels; ch++) {
+      const out = buffer.getChannelData(ch);
+      for (let i = 0; i < frames; i++) out[i] = samples[i * channels + ch];
+    }
+    return buffer;
   }
 
   // Play a freshly-decoded buffer; replaces any current source.

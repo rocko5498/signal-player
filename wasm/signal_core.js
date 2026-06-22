@@ -46,14 +46,6 @@ function getStringFromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return cachedTextDecoder.decode(getUint8ArrayMemory0().subarray(ptr, ptr + len));
 }
-/**
-* Initialisation. Called automatically by wasm-bindgen on module load.
-* We install a panic hook so Rust panics surface in the browser console
-* rather than disappearing silently.
-*/
-export function _init() {
-    wasm._init();
-}
 
 let cachedDataViewMemory0 = null;
 
@@ -82,6 +74,15 @@ export function build_tag() {
         wasm.__wbindgen_add_to_stack_pointer(16);
         wasm.__wbindgen_export_0(deferred1_0, deferred1_1, 1);
     }
+}
+
+/**
+* Initialisation. Called automatically by wasm-bindgen on module load.
+* We install a panic hook so Rust panics surface in the browser console
+* rather than disappearing silently.
+*/
+export function _init() {
+    wasm._init();
 }
 
 let WASM_VECTOR_LEN = 0;
@@ -137,18 +138,20 @@ function passArrayF32ToWasm0(arg, malloc) {
     return ptr;
 }
 /**
-* Measure THD+N from a captured signal containing a known tone.
-* Returns the THD+N ratio in dB (more negative = cleaner).
+* Analyze whether a file's claimed hi-res spec matches its actual content.
+* `samples` is interleaved; we only look at channel 0.
 * @param {Float32Array} samples
 * @param {number} sample_rate
-* @param {number} fundamental_hz
-* @returns {number}
+* @param {number} channels
+* @param {number} claimed_rate
+* @param {number} claimed_bits
+* @returns {any}
 */
-export function measure_thd_n(samples, sample_rate, fundamental_hz) {
+export function analyze_hi_res(samples, sample_rate, channels, claimed_rate, claimed_bits) {
     const ptr0 = passArrayF32ToWasm0(samples, wasm.__wbindgen_export_1);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.measure_thd_n(ptr0, len0, sample_rate, fundamental_hz);
-    return ret;
+    const ret = wasm.analyze_hi_res(ptr0, len0, sample_rate, channels, claimed_rate, claimed_bits);
+    return takeObject(ret);
 }
 
 /**
@@ -174,20 +177,18 @@ export function compute_dr(samples, sample_rate, channels) {
 }
 
 /**
-* Analyze whether a file's claimed hi-res spec matches its actual content.
-* `samples` is interleaved; we only look at channel 0.
+* Measure THD+N from a captured signal containing a known tone.
+* Returns the THD+N ratio in dB (more negative = cleaner).
 * @param {Float32Array} samples
 * @param {number} sample_rate
-* @param {number} channels
-* @param {number} claimed_rate
-* @param {number} claimed_bits
-* @returns {any}
+* @param {number} fundamental_hz
+* @returns {number}
 */
-export function analyze_hi_res(samples, sample_rate, channels, claimed_rate, claimed_bits) {
+export function measure_thd_n(samples, sample_rate, fundamental_hz) {
     const ptr0 = passArrayF32ToWasm0(samples, wasm.__wbindgen_export_1);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.analyze_hi_res(ptr0, len0, sample_rate, channels, claimed_rate, claimed_bits);
-    return takeObject(ret);
+    const ret = wasm.measure_thd_n(ptr0, len0, sample_rate, fundamental_hz);
+    return ret;
 }
 
 const cachedTextEncoder = (typeof TextEncoder !== 'undefined' ? new TextEncoder('utf-8') : { encode: () => { throw Error('TextEncoder not available') } } );
@@ -322,7 +323,7 @@ async function __wbg_load(module, imports) {
 function __wbg_get_imports() {
     const imports = {};
     imports.wbg = {};
-    imports.wbg.__wbg_error_204b288ececf720f = function(arg0, arg1) {
+    imports.wbg.__wbg_error_a18d7dc177dc2921 = function(arg0, arg1) {
         console.error(getStringFromWasm0(arg0, arg1));
     };
     imports.wbg.__wbindgen_object_drop_ref = function(arg0) {

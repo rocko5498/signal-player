@@ -1,16 +1,16 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
+* Build tag — JS can query this to confirm the WASM is the version it expects.
+* @returns {string}
+*/
+export function build_tag(): string;
+/**
 * Initialisation. Called automatically by wasm-bindgen on module load.
 * We install a panic hook so Rust panics surface in the browser console
 * rather than disappearing silently.
 */
 export function _init(): void;
-/**
-* Build tag — JS can query this to confirm the WASM is the version it expects.
-* @returns {string}
-*/
-export function build_tag(): string;
 /**
 * Decode a DSF file's bytes to PCM at the target sample rate.
 * Returns interleaved f32 samples (L,R,L,R,...).
@@ -21,14 +21,16 @@ export function build_tag(): string;
 */
 export function decode_dsd_to_pcm(bytes: Uint8Array, target_rate: number): Float32Array;
 /**
-* Measure THD+N from a captured signal containing a known tone.
-* Returns the THD+N ratio in dB (more negative = cleaner).
+* Analyze whether a file's claimed hi-res spec matches its actual content.
+* `samples` is interleaved; we only look at channel 0.
 * @param {Float32Array} samples
 * @param {number} sample_rate
-* @param {number} fundamental_hz
-* @returns {number}
+* @param {number} channels
+* @param {number} claimed_rate
+* @param {number} claimed_bits
+* @returns {any}
 */
-export function measure_thd_n(samples: Float32Array, sample_rate: number, fundamental_hz: number): number;
+export function analyze_hi_res(samples: Float32Array, sample_rate: number, channels: number, claimed_rate: number, claimed_bits: number): any;
 /**
 * Compute Dynamic Range using the TT DR Meter algorithm.
 * `samples` is interleaved (L,R,L,R,...). Returns an integer DR value.
@@ -46,16 +48,14 @@ export function measure_thd_n(samples: Float32Array, sample_rate: number, fundam
 */
 export function compute_dr(samples: Float32Array, sample_rate: number, channels: number): number;
 /**
-* Analyze whether a file's claimed hi-res spec matches its actual content.
-* `samples` is interleaved; we only look at channel 0.
+* Measure THD+N from a captured signal containing a known tone.
+* Returns the THD+N ratio in dB (more negative = cleaner).
 * @param {Float32Array} samples
 * @param {number} sample_rate
-* @param {number} channels
-* @param {number} claimed_rate
-* @param {number} claimed_bits
-* @returns {any}
+* @param {number} fundamental_hz
+* @returns {number}
 */
-export function analyze_hi_res(samples: Float32Array, sample_rate: number, channels: number, claimed_rate: number, claimed_bits: number): any;
+export function measure_thd_n(samples: Float32Array, sample_rate: number, fundamental_hz: number): number;
 /**
 * Parse audio file headers. `bytes` is the first 256 KB (or 1 MB).
 * `ext` is the file extension (lowercase, no dot).

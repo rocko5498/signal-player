@@ -206,15 +206,17 @@ function fftInPlace(re, im) {
 
 // ----------------------------------------------------------
 // 3. Signal-path measurement — generate a known sine,
-// route through engine, measure THD+N from the captured FFT.
+// capture time-domain samples, route through Rust for the
+// THD+N computation (correct ±15 bin exclusion). Falls back
+// to a corrected JS path if Rust isn't loaded.
 // ----------------------------------------------------------
-export async function measureSignalPath(audioCtx) {
+export async function measureSignalPath(audioCtx, coreOpt) {
   const sr = audioCtx.sampleRate;
   const duration = 0.5;
   const fundamental = 1000;
   const amplitude = Math.pow(10, -3/20); // -3 dBFS
 
-  // Generate
+  // Generate the test tone as a buffer
   const N = Math.floor(sr * duration);
   const buf = audioCtx.createBuffer(1, N, sr);
   const data = buf.getChannelData(0);
@@ -222,7 +224,7 @@ export async function measureSignalPath(audioCtx) {
     data[i] = amplitude * Math.sin(2 * Math.PI * fundamental * i / sr);
   }
 
-  // Route: source → analyser (capture-only, no destination)
+  // Route: source → analyser (capture-only, no destination = silent)
   const src = audioCtx.createBufferSource();
   src.buffer = buf;
   const analyser = audioCtx.createAnalyser();
@@ -230,40 +232,68 @@ export async function measureSignalPath(audioCtx) {
   src.connect(analyser);
   src.start();
 
-  // Wait ~250ms then snapshot
+  // Wait ~250ms then snapshot time-domain samples
   await new Promise(r => setTimeout(r, 250));
 
-  const fft = new Float32Array(analyser.frequencyBinCount);
-  analyser.getFloatFrequencyData(fft); // dB
-
+  const td = new Float32Array(analyser.fftSize);
+  analyser.getFloatTimeDomainData(td);
   src.stop();
   src.disconnect();
 
-  // Find the fundamental bin
-  const binHz = sr / analyser.fftSize;
-  const fundBin = Math.round(fundamental / binHz);
-  let fundDb = -Infinity;
-  for (let i = Math.max(0, fundBin - 3); i <= Math.min(fft.length - 1, fundBin + 3); i++) {
-    if (fft[i] > fundDb) fundDb = fft[i];
+  // --- Prefer Rust: correct exclusion window, faster FFT ---
+  if (coreOpt && coreOpt.available && typeof coreOpt.measureThdN === 'function') {
+    try {
+      const thdnDb = coreOpt.measureThdN(td, sr, fundamental);
+      return {
+        fundamentalDb: 0,           // not used by UI
+        thdnDb,
+        clean: thdnDb < -80,
+        timestamp: Date.now(),
+        path: 'rust',
+      };
+    } catch (e) {
+      // fall through to JS
+    }
   }
 
-  // Noise+distortion = energy outside the fundamental ±3 bins,
-  // excluding DC and very high frequencies
-  let nPower = 0;
-  for (let i = 5; i < fft.length - 5; i++) {
-    if (i >= fundBin - 5 && i <= fundBin + 5) continue;
-    const lin = Math.pow(10, fft[i] / 20);
-    nPower += lin * lin;
+  // --- JS fallback (corrected exclusion: ±15 bins) ---
+  // Run FFT on the time-domain snapshot we captured.
+  const fftN = 1 << Math.floor(Math.log2(td.length)); // largest power of 2
+  const re = new Float32Array(fftN);
+  const im = new Float32Array(fftN);
+  const denom = fftN - 1;
+  for (let i = 0; i < fftN; i++) {
+    const w = 0.5 * (1 - Math.cos(2 * Math.PI * i / denom));
+    re[i] = td[i] * w;
   }
-  const fundLin = Math.pow(10, fundDb / 20);
-  const thdn = nPower > 0 ? Math.sqrt(nPower) / fundLin : 0;
-  const thdnDb = thdn > 0 ? 20 * Math.log10(thdn) : -120;
+  fftInPlace(re, im);
+  const mags = new Float32Array(fftN / 2);
+  for (let i = 0; i < fftN / 2; i++) mags[i] = Math.sqrt(re[i]*re[i] + im[i]*im[i]);
+
+  const binHz = sr / fftN;
+  const fundBin = Math.round(fundamental / binHz);
+  let fundAmp = 0;
+  for (let i = Math.max(0, fundBin - 3); i <= Math.min(mags.length - 1, fundBin + 3); i++) {
+    if (mags[i] > fundAmp) fundAmp = mags[i];
+  }
+  if (fundAmp <= 0) return { thdnDb: 0, clean: false, timestamp: Date.now(), path: 'js' };
+
+  // Wide exclusion: ±15 bins to escape Hann window leakage
+  const EXCL = 15;
+  let nPower = 0;
+  for (let i = EXCL; i < mags.length - EXCL; i++) {
+    if (i >= fundBin - EXCL && i <= fundBin + EXCL) continue;
+    nPower += mags[i] * mags[i];
+  }
+  const ratio = Math.sqrt(nPower) / fundAmp;
+  const thdnDb = ratio > 0 ? 20 * Math.log10(ratio) : -120;
 
   return {
-    fundamentalDb: fundDb,
+    fundamentalDb: 20 * Math.log10(fundAmp || 1e-10),
     thdnDb,
-    clean: thdnDb < -80, // -80 dB THD+N is excellent
+    clean: thdnDb < -80,
     timestamp: Date.now(),
+    path: 'js',
   };
 }
 

@@ -1061,7 +1061,7 @@ els.badgeMeasured.addEventListener('click', async () => {
   els.badgeMeasured.classList.add('measuring');
   els.badgeMeasuredLabel.textContent = 'Measuring…';
   try {
-    const r = await measureSignalPath(engine.ctx);
+    const r = await measureSignalPath(engine.ctx, core);
     state.measured = r;
     els.badgeMeasured.classList.remove('measuring');
     if (r.clean) {
