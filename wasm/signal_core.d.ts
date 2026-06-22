@@ -1,16 +1,9 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
-* Build tag — JS can query this to confirm the WASM is the version it expects.
 * @returns {string}
 */
 export function build_tag(): string;
-/**
-* Initialisation. Called automatically by wasm-bindgen on module load.
-* We install a panic hook so Rust panics surface in the browser console
-* rather than disappearing silently.
-*/
-export function _init(): void;
 /**
 * Decode a DSF file's bytes to PCM at the target sample rate.
 * Returns interleaved f32 samples (L,R,L,R,...).
@@ -88,12 +81,10 @@ export interface InitOutput {
   readonly measure_thd_n: (a: number, b: number, c: number, d: number) => number;
   readonly parse_metadata: (a: number, b: number, c: number, d: number, e: number) => number;
   readonly take_last_picture: (a: number) => void;
-  readonly _init: () => void;
   readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
   readonly __wbindgen_export_0: (a: number, b: number, c: number) => void;
   readonly __wbindgen_export_1: (a: number, b: number) => number;
   readonly __wbindgen_export_2: (a: number, b: number, c: number, d: number) => number;
-  readonly __wbindgen_start: () => void;
 }
 
 export type SyncInitInput = BufferSource | WebAssembly.Module;

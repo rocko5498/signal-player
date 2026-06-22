@@ -56,7 +56,6 @@ function getDataViewMemory0() {
     return cachedDataViewMemory0;
 }
 /**
-* Build tag — JS can query this to confirm the WASM is the version it expects.
 * @returns {string}
 */
 export function build_tag() {
@@ -74,15 +73,6 @@ export function build_tag() {
         wasm.__wbindgen_add_to_stack_pointer(16);
         wasm.__wbindgen_export_0(deferred1_0, deferred1_1, 1);
     }
-}
-
-/**
-* Initialisation. Called automatically by wasm-bindgen on module load.
-* We install a panic hook so Rust panics surface in the browser console
-* rather than disappearing silently.
-*/
-export function _init() {
-    wasm._init();
 }
 
 let WASM_VECTOR_LEN = 0;
@@ -323,9 +313,6 @@ async function __wbg_load(module, imports) {
 function __wbg_get_imports() {
     const imports = {};
     imports.wbg = {};
-    imports.wbg.__wbg_error_a18d7dc177dc2921 = function(arg0, arg1) {
-        console.error(getStringFromWasm0(arg0, arg1));
-    };
     imports.wbg.__wbindgen_object_drop_ref = function(arg0) {
         takeObject(arg0);
     };
@@ -367,7 +354,7 @@ function __wbg_finalize_init(instance, module) {
     cachedUint8ArrayMemory0 = null;
 
 
-    wasm.__wbindgen_start();
+
     return wasm;
 }
 
